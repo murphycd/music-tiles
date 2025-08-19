@@ -15,7 +15,6 @@ from config import (
     ViewConfig,
     InteractionConfig,
     OctaveConfig,
-    MusicConfig,
     MidiConfig,
 )
 from viewport import Viewport
@@ -244,44 +243,25 @@ class App:
         self.canvas.bind("<Button-5>", self._on_zoom)  # Linux scroll down
 
     def _clear_and_reset(self):
-        """Clears the selection and resets the viewport and global octave."""
+        """Clears the selection and resets the viewport to its initial state."""
         if not self.renderer or not self.viewport:
             return
 
-        # Turn off all playing notes before clearing the model state
+        # Turn off all playing notes before clearing the model state.
         for coord, octave in self.model.selected_tiles.items():
             midi_note = self.model.get_midi_note_for_coord(coord, octave)
             self.midi_handler.note_off(midi_note)
 
         self.model.clear_selection()
-        self.model.set_enharmonic_preference(MusicConfig.DEFAULT_USE_SHARPS)
-        self._update_enharmonic_button_text()
-        self.global_octave = OctaveConfig.INITIAL_OCTAVE
-        self._update_octave_label()
 
-        # Reset instrument in UI and handler
-        if self.midi_handler.is_active and self.instrument_list and self.instrument_var:
-            instrument_names = list(self.instrument_list.keys())
-            default_name = next(
-                (
-                    name
-                    for name, num in self.instrument_list.items()
-                    if num == MidiConfig.DEFAULT_INSTRUMENT
-                ),
-                instrument_names[0],
-            )
-            self.instrument_var.set(default_name)
-            self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
-
-        self.render_mode = ViewConfig.DEFAULT_RENDER_MODE
-        self.viewport = Viewport(
+        # Reset the viewport's pan and zoom to the initial state.
+        self.viewport.reset(
             self.canvas.winfo_width(),
             self.canvas.winfo_height(),
             ViewConfig.INITIAL_TILES_ON_SCREEN,
-            self.render_mode,
         )
-        self.renderer.viewport = self.viewport
-        self.renderer.set_render_mode(self.render_mode)
+
+        # Redraw the entire canvas to reflect the cleared selection and reset view.
         self.renderer.redraw_full()
 
     def _on_resize(self):

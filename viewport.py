@@ -39,6 +39,10 @@ class Viewport:
         self.offset_x = -width / 2
         self.offset_y = -height / 2
 
+    def reset(self, canvas_width: int, canvas_height: int, initial_tiles: int):
+        """Resets the viewport to its initial pan and zoom state."""
+        self._set_initial_zoom(canvas_width, canvas_height, initial_tiles)
+
     def update_zoom_limits(
         self, width: int, height: int, min_tiles: int, max_tiles: int
     ):
