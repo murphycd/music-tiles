@@ -58,6 +58,20 @@ class TonnetzModel:
         self.selected_tiles[coord] = new_octave
         return new_octave
 
+    def get_midi_note_for_coord(self, coord: Tuple[int, int], octave: int) -> int:
+        """
+        Calculates the absolute MIDI note number for a coordinate at a specific octave.
+        """
+        # Get the MIDI note number for the pitch class, relative to the grid's origin.
+        base_pitch_midi = utils.coord_to_midi(coord, self.base_midi)
+
+        # Extract the pitch class (0-11) from that base note.
+        pitch_class = base_pitch_midi % 12
+
+        # Calculate the final MIDI note using the desired octave.
+        # MIDI formula: 12 * (octave + 1) + pitch_class
+        return 12 * (octave + 1) + pitch_class
+
     def get_display_note_for_coord(self, coord: Tuple[int, int]) -> str:
         """
         Gets the note name for display. Includes octave only if selected.

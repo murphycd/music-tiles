@@ -78,3 +78,10 @@ class OctaveConfig:
     MIN_OCTAVE: int = 2
     MAX_OCTAVE: int = 6
     INITIAL_OCTAVE: int = 4
+
+
+@dataclass
+class MidiConfig:
+    """Defines constants for MIDI output."""
+
+    DEFAULT_VELOCITY: int = 100

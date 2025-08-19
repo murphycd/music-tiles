@@ -15,10 +15,12 @@ from config import (
     InteractionConfig,
     OctaveConfig,
     MusicConfig,
+    MidiConfig,
 )
 from viewport import Viewport
 from tonnetz import TonnetzModel
 from renderer import GridRenderer
+from midi_handler import MidiHandler
 import utils
 
 
@@ -33,7 +35,7 @@ class App:
         self.octave_label: Optional[tk.Label] = None
         self.enharmonic_button_text: Optional[tk.StringVar] = None
 
-        # Initialize the model before the UI, as the UI depends on the model's state.
+        self.midi_handler = MidiHandler()
         self.model = TonnetzModel()
         self._setup_ui()
 
@@ -50,6 +52,18 @@ class App:
         self._update_octave_label()
 
         self._bind_events()
+        # Ensure MIDI resources are cleaned up on window close.
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    def _on_closing(self):
+        """Handles window close events to clean up resources."""
+        # Turn off all playing notes before closing.
+        for coord, octave in self.model.selected_tiles.items():
+            midi_note = self.model.get_midi_note_for_coord(coord, octave)
+            self.midi_handler.note_off(midi_note)
+
+        self.midi_handler.close()
+        self.root.destroy()
 
     def _initialize_components(self):
         """Creates the viewport and renderer once the canvas is ready."""
@@ -146,6 +160,11 @@ class App:
         if not self.renderer or not self.viewport:
             return
 
+        # Turn off all playing notes before clearing the model state
+        for coord, octave in self.model.selected_tiles.items():
+            midi_note = self.model.get_midi_note_for_coord(coord, octave)
+            self.midi_handler.note_off(midi_note)
+
         self.model.clear_selection()
         self.model.set_enharmonic_preference(MusicConfig.DEFAULT_USE_SHARPS)
         self._update_enharmonic_button_text()
@@ -171,6 +190,25 @@ class App:
             ViewConfig.MAX_TILES_ON_SCREEN,
         )
         self.renderer.redraw_full()
+
+    def _toggle_tile_and_midi(self, coord: Tuple[int, int]):
+        """Toggles a single tile's selection and sends corresponding MIDI messages."""
+        was_selected = self.model.is_selected(coord)
+
+        if was_selected:
+            old_octave = self.model.get_octave(coord)
+            if old_octave is not None:
+                midi_note = self.model.get_midi_note_for_coord(coord, old_octave)
+                self.midi_handler.note_off(midi_note)
+
+        self.model.toggle_selection(coord, self.global_octave)
+
+        is_now_selected = self.model.is_selected(coord)
+        if is_now_selected:
+            new_octave = self.model.get_octave(coord)
+            if new_octave is not None:
+                midi_note = self.model.get_midi_note_for_coord(coord, new_octave)
+                self.midi_handler.note_on(midi_note, MidiConfig.DEFAULT_VELOCITY)
 
     def _on_press(self, event):
         """Handles the start of any mouse action."""
@@ -216,7 +254,7 @@ class App:
                 current_coord[1],
             ):
                 if coord not in self.drag_affected_coords:
-                    self.model.toggle_selection(coord, self.global_octave)
+                    self._toggle_tile_and_midi(coord)
                     self.drag_affected_coords.add(coord)
                     coords_to_update.add(coord)
 
@@ -236,14 +274,22 @@ class App:
 
         if self.drag_button == 1 and is_click:
             coord = self.viewport.canvas_to_world_int(event.x, event.y)
-            self.model.toggle_selection(coord, self.global_octave)
+            self._toggle_tile_and_midi(coord)
             self.renderer.update_visuals({coord})
 
         elif self.drag_button == 3 and is_click:
             coord = self.viewport.canvas_to_world_int(event.x, event.y)
             if self.model.is_selected(coord):
+                old_octave = self.model.get_octave(coord)
                 new_octave = self.model.increment_octave(coord)
-                if new_octave is not None:
+
+                if new_octave is not None and old_octave is not None:
+                    old_midi = self.model.get_midi_note_for_coord(coord, old_octave)
+                    new_midi = self.model.get_midi_note_for_coord(coord, new_octave)
+
+                    self.midi_handler.note_off(old_midi)
+                    self.midi_handler.note_on(new_midi, MidiConfig.DEFAULT_VELOCITY)
+
                     self.global_octave = new_octave
                     self._update_octave_label()
                     self.renderer.update_visuals({coord})
