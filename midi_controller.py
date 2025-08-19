@@ -54,10 +54,12 @@ class MidiController:
     def _on_tile_selected(self, event: TileSelectedEvent):
         """Handles tile selection by sending a MIDI Note On message."""
         midi_note, pitch_bend = self.note_mapper.coord_to_midi(event.coord, event.octave)
-        #debug pitch_bend and note 
-        print(f"Playing Note: {midi_note}, Pitch Bend:{pitch_bend}")
+        print(f"Playing Note: {midi_note}, Pitch Bend: {pitch_bend}")
+        
         channel = self._get_next_channel()
+        # Send pitch bend BEFORE note on
         self.midi_handler.pitch_bend(pitch_bend, channel)
+        # Optional small delay to ensure messages are processed in order
         time.sleep(0.005)
         self.midi_handler.note_on(midi_note, MidiConfig.DEFAULT_VELOCITY, channel)
         self.active_notes[(event.coord, event.octave)] = channel
@@ -66,6 +68,7 @@ class MidiController:
         """Handles tile deselection by sending a MIDI Note Off message."""
         if (event.coord, event.octave) in self.active_notes:
             channel = self.active_notes.pop((event.coord, event.octave))
+            # We only need the note number to turn it off
             midi_note, _ = self.note_mapper.coord_to_midi(event.coord, event.octave)
             self.midi_handler.note_off(midi_note, channel)
 
@@ -78,15 +81,16 @@ class MidiController:
             self.midi_handler.note_off(old_midi, channel)
 
         # Turn on the new note
-        new_midi, pitch_bend = self.note_mapper.coord_to_midi(event.coord, event.new_octave)
+        new_midi, new_pitch_bend = self.note_mapper.coord_to_midi(event.coord, event.new_octave)
         new_channel = self._get_next_channel()
-        self.midi_handler.pitch_bend(pitch_bend, new_channel)
+        self.midi_handler.pitch_bend(new_pitch_bend, new_channel)
+        time.sleep(0.005)
         self.midi_handler.note_on(new_midi, MidiConfig.DEFAULT_VELOCITY, new_channel)
         self.active_notes[(event.coord, event.new_octave)] = new_channel
 
     def _on_selection_cleared(self, event: SelectionClearedEvent):
         """Handles clearing the grid by stopping all previously playing notes."""
         for (coord, octave), channel in self.active_notes.items():
-            midi_note, _ = self.note_mapper.coord_to_midi(coord, octave)
+            midi_note = self.note_mapper.coord_to_midi(coord, octave)
             self.midi_handler.note_off(midi_note, channel)
         self.active_notes.clear()

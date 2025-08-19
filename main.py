@@ -54,6 +54,9 @@ class App:
         self.model.add_listener(self.midi_controller)
 
         if self.midi_handler.is_active:
+            """default_tuning = self.tuning_systems.get("Just Intonation")
+            if default_tuning:
+                self.midi_handler.apply_tuning(default_tuning)"""
             self.instrument_list = self.midi_handler.get_instruments()
             self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
 
