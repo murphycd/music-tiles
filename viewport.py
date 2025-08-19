@@ -67,101 +67,118 @@ class Viewport:
             True if the zoom level changed, False otherwise.
         """
         old_zoom = self.zoom
-        world_y_float, world_x_float = self.canvas_to_world_float(canvas_x, canvas_y)
+        world_q_float, world_r_float = self.canvas_to_world_float(canvas_x, canvas_y)
 
         new_zoom = self.zoom * scale
         self.zoom = max(self.min_zoom, min(self.max_zoom, new_zoom))
 
-        self.offset_x = world_x_float * self.zoom - canvas_x
-        self.offset_y = world_y_float * self.zoom - canvas_y
+        if self.zoom == old_zoom:
+            return False
 
-        return self.zoom != old_zoom
+        # Re-calculate offset to keep the point under the cursor stationary
+        if self.render_mode == RenderMode.RECTANGLE:
+            self.offset_x = world_q_float * self.zoom - canvas_x
+            self.offset_y = -world_r_float * self.zoom - canvas_y
+        else:  # HEXAGON
+            # This logic is more complex and depends on the hex geometry
+            wx, wy = self._axial_to_world_pixel(world_q_float, world_r_float)
+            self.offset_x = wx - canvas_x
+            self.offset_y = wy - canvas_y
+
+        return True
 
     def canvas_to_world_int(self, cx: int, cy: int) -> Tuple[int, int]:
         """Dispatches to the correct coordinate conversion based on render mode."""
         if self.render_mode == RenderMode.RECTANGLE:
-            return self._canvas_to_rect_grid(cx, cy)
+            return self._canvas_to_rect_projection(cx, cy)
         return self._canvas_to_hex_grid(cx, cy)
 
-    def _canvas_to_rect_grid(self, cx: int, cy: int) -> Tuple[int, int]:
-        """Converts canvas pixel coordinates to integer world tile coordinates."""
-        world_y, world_x = self.canvas_to_world_float(cx, cy)
-        return math.floor(world_y), math.floor(world_x)
+    def _canvas_to_rect_projection(self, cx: int, cy: int) -> Tuple[int, int]:
+        """Converts canvas pixels to (q, r) for a rectangular projection."""
+        if self.zoom == 0:
+            return 0, 0
+        # The renderer maps the q-axis to screen-x and the -r-axis to screen-y.
+        # This function must be the mathematical inverse of that projection.
+        q = math.floor((cx + self.offset_x) / self.zoom)
+        r = -math.floor((cy + self.offset_y) / self.zoom)
+        return q, r
+
+    def _hex_round(self, q_f: float, r_f: float) -> Tuple[int, int]:
+        """Rounds fractional axial coordinates to the nearest hex integer coordinate."""
+        s_f = -q_f - r_f
+        q = round(q_f)
+        r = round(r_f)
+        s = round(s_f)
+
+        q_diff = abs(q - q_f)
+        r_diff = abs(r - r_f)
+        s_diff = abs(s - s_f)
+
+        if q_diff > r_diff and q_diff > s_diff:
+            q = -r - s
+        elif r_diff > s_diff:
+            r = -q - s
+        # No 'else' needed as 's' is derived, we only need to return q and r.
+
+        return int(q), int(r)
 
     def _canvas_to_hex_grid(self, cx: int, cy: int) -> Tuple[int, int]:
-        """Converts canvas coordinates to a staggered hex grid coordinate."""
-        hex_height = self.zoom
-        if hex_height <= 0:
-            return 0, 0
-        hex_width = (math.sqrt(3) / 2) * hex_height
-        if hex_width <= 0:
+        """Converts canvas coordinates to axial hex grid coordinates."""
+        if self.zoom <= 0:
             return 0, 0
 
-        # Convert canvas coordinates to "world pixel" coordinates, which is the
-        # space in which tile centers are calculated before the viewport offset.
+        # Pointy-top hex orientation
+        size = self.zoom / 2.0
         world_px_x = cx + self.offset_x
         world_px_y = cy + self.offset_y
 
-        # Roughly estimate the grid coordinates (r, c) by inverting the
-        # rendering formulas.
-        r_est = world_px_y / (hex_height * 0.75)
-        r_round = int(round(r_est))
+        # Convert world pixel coordinates to fractional axial coordinates
+        q_f = (math.sqrt(3) / 3 * world_px_x - 1 / 3 * world_px_y) / size
+        r_f = (2 / 3 * world_px_y) / size
 
-        x_destagger = world_px_x - ((r_round & 1) * (hex_width / 2))
-        c_est = x_destagger / hex_width
-        c_round = int(round(c_est))
-
-        # The initial estimate can be inaccurate near tile borders. To find the
-        # true closest tile, check the estimate and its six neighbors.
-        min_dist_sq = float("inf")
-        best_coord = (r_round, c_round)
-
-        # Define neighbor offsets for the "odd-q" vertical layout.
-        if r_round & 1:  # Odd row
-            neighbor_offsets = [(0, 1), (0, -1), (-1, -1), (-1, 0), (1, -1), (1, 0)]
-        else:  # Even row
-            neighbor_offsets = [(0, 1), (0, -1), (-1, 0), (-1, 1), (1, 0), (1, 1)]
-
-        # The list of candidates includes the initial estimate and all its neighbors.
-        candidate_coords = [(r_round, c_round)]
-        for dr, dc in neighbor_offsets:
-            candidate_coords.append((r_round + dr, c_round + dc))
-
-        for r_cand, c_cand in candidate_coords:
-            # Calculate the center of the candidate hex in world pixel coordinates.
-            center_y = r_cand * hex_height * 0.75
-            center_x = c_cand * hex_width + ((r_cand & 1) * (hex_width / 2))
-
-            # Find the squared distance between the click point and the candidate's center.
-            # All coordinates are now in the same "world pixel" system.
-            dist_sq = (world_px_x - center_x) ** 2 + (world_px_y - center_y) ** 2
-            if dist_sq < min_dist_sq:
-                min_dist_sq = dist_sq
-                best_coord = (r_cand, c_cand)
-
-        return best_coord
+        return self._hex_round(q_f, r_f)
 
     def canvas_to_world_float(self, cx: int, cy: int) -> Tuple[float, float]:
-        """Converts canvas pixel coordinates to precise world coordinates."""
+        """Converts canvas pixel coordinates to precise world (q, r) coords."""
         if self.zoom == 0:
             return 0.0, 0.0
-        return (cy + self.offset_y) / self.zoom, (cx + self.offset_x) / self.zoom
+
+        if self.render_mode == RenderMode.RECTANGLE:
+            q = (cx + self.offset_x) / self.zoom
+            r = -(cy + self.offset_y) / self.zoom
+            return q, r
+
+        # HEXAGON mode
+        size = self.zoom / 2.0
+        world_px_x = cx + self.offset_x
+        world_px_y = cy + self.offset_y
+        q_f = (math.sqrt(3) / 3 * world_px_x - 1 / 3 * world_px_y) / size
+        r_f = (2 / 3 * world_px_y) / size
+        return q_f, r_f
+
+    def _axial_to_world_pixel(self, q: float, r: float) -> Tuple[float, float]:
+        """Converts axial coordinates to world pixel coordinates (for hex)."""
+        size = self.zoom / 2.0
+        world_px_x = size * (math.sqrt(3) * q + math.sqrt(3) / 2 * r)
+        world_px_y = size * (3.0 / 2.0 * r)
+        return world_px_x, world_px_y
 
     def get_visible_grid_rect(
         self, canvas_width: int, canvas_height: int
     ) -> Tuple[int, int, int, int]:
         """
-        Calculates the integer bounding box of visible tiles in world coordinates.
-        Returns (min_row, max_row, min_col, max_col).
+        Calculates the integer bounding box of visible tiles in (q, r) world coordinates.
         """
-        # For hex grids, this bounding box will be slightly larger than necessary,
-        # but it correctly covers all potentially visible tiles.
-        if self.render_mode == RenderMode.RECTANGLE:
-            start_row, start_col = self.canvas_to_world_int(0, 0)
-            end_row, end_col = self.canvas_to_world_int(canvas_width, canvas_height)
-            return start_row, end_row + 1, start_col, end_col + 1
-
-        # For hex grid, we need a slightly larger buffer for the staggered shape
-        start_row, start_col = self._canvas_to_rect_grid(0, 0)
-        end_row, end_col = self._canvas_to_rect_grid(canvas_width, canvas_height)
-        return start_row - 1, end_row + 2, start_col - 1, end_col + 2
+        # This generic approach works for any projection (rect or hex)
+        corners = [
+            self.canvas_to_world_int(0, 0),
+            self.canvas_to_world_int(canvas_width, 0),
+            self.canvas_to_world_int(0, canvas_height),
+            self.canvas_to_world_int(canvas_width, canvas_height),
+        ]
+        min_q = min(c[0] for c in corners)
+        max_q = max(c[0] for c in corners)
+        min_r = min(c[1] for c in corners)
+        max_r = max(c[1] for c in corners)
+        # Add a buffer for safety, especially for hex tiles that bleed over edges
+        return min_q - 1, max_q + 2, min_r - 1, max_r + 2

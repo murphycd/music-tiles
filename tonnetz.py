@@ -2,26 +2,47 @@
 """
 Manages the application's data model, including tile selection and music theory.
 """
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, List, Any
 from config import MusicConfig, OctaveConfig
 import utils
+from events import (
+    TileSelectedEvent,
+    TileDeselectedEvent,
+    TileOctaveChangedEvent,
+    SelectionClearedEvent,
+    ModelEvent,
+)
 
 
 class TonnetzModel:
-    """Holds the state and logic of the musical grid, independent of the UI."""
+    """
+    Holds the state of the musical grid and notifies listeners of changes.
+    """
 
     def __init__(self):
-        # Maps selected (row, col) coordinates to their octave
+        # Maps selected (q, r) coordinates to their octave
         self.selected_tiles: Dict[Tuple[int, int], int] = {}
         self.pitch_class_cache: dict[Tuple[int, int], str] = {}
-        self.base_midi = utils.note_to_midi(MusicConfig.ORIGIN_NOTE)
+        self.base_midi_for_naming = utils.note_to_midi(MusicConfig.ORIGIN_NOTE)
         self.use_sharps: bool = MusicConfig.DEFAULT_USE_SHARPS
+        self.listeners: List[Any] = []
+
+    def add_listener(self, listener: Any):
+        """Adds a listener to be notified of model changes."""
+        if listener not in self.listeners:
+            self.listeners.append(listener)
+
+    def _notify(self, event: ModelEvent):
+        """Notifies all registered listeners of an event."""
+        for listener in self.listeners:
+            # Assumes listeners have a 'handle_event' method.
+            if hasattr(listener, "handle_event"):
+                listener.handle_event(event)
 
     def set_enharmonic_preference(self, use_sharps: bool):
         """Sets the global preference for displaying sharp or flat notes."""
         if self.use_sharps != use_sharps:
             self.use_sharps = use_sharps
-            # Invalidate the cache since note names will change
             self.pitch_class_cache.clear()
 
     def is_selected(self, coord: Tuple[int, int]) -> bool:
@@ -33,19 +54,25 @@ class TonnetzModel:
         return self.selected_tiles.get(coord)
 
     def toggle_selection(self, coord: Tuple[int, int], initial_octave: int):
-        """Toggles the selection state of a coordinate."""
+        """Toggles the selection state of a coordinate and notifies listeners."""
         if self.is_selected(coord):
-            self.selected_tiles.pop(coord)
+            old_octave = self.selected_tiles.pop(coord)
+            self._notify(TileDeselectedEvent(coord=coord, octave=old_octave))
         else:
             self.selected_tiles[coord] = initial_octave
+            self._notify(TileSelectedEvent(coord=coord, octave=initial_octave))
 
     def clear_selection(self):
-        """Clears the entire selection."""
+        """Clears the entire selection and notifies listeners."""
+        if not self.selected_tiles:
+            return
+        cleared_tiles_copy = self.selected_tiles.copy()
         self.selected_tiles.clear()
+        self._notify(SelectionClearedEvent(cleared_tiles=cleared_tiles_copy))
 
     def increment_octave(self, coord: Tuple[int, int]) -> Optional[int]:
         """
-        Increments a selected tile's octave, cycling between min and max.
+        Increments a selected tile's octave and notifies listeners.
         Returns the new octave, or None if the tile was not selected.
         """
         if not self.is_selected(coord):
@@ -56,21 +83,12 @@ class TonnetzModel:
         span = max_o - min_o + 1
         new_octave = (current_octave - min_o + 1) % span + min_o
         self.selected_tiles[coord] = new_octave
+        self._notify(
+            TileOctaveChangedEvent(
+                coord=coord, old_octave=current_octave, new_octave=new_octave
+            )
+        )
         return new_octave
-
-    def get_midi_note_for_coord(self, coord: Tuple[int, int], octave: int) -> int:
-        """
-        Calculates the absolute MIDI note number for a coordinate at a specific octave.
-        """
-        # Get the MIDI note number for the pitch class, relative to the grid's origin.
-        base_pitch_midi = utils.coord_to_midi(coord, self.base_midi)
-
-        # Extract the pitch class (0-11) from that base note.
-        pitch_class = base_pitch_midi % 12
-
-        # Calculate the final MIDI note using the desired octave.
-        # MIDI formula: 12 * (octave + 1) + pitch_class
-        return 12 * (octave + 1) + pitch_class
 
     def get_display_note_for_coord(self, coord: Tuple[int, int]) -> str:
         """
@@ -87,7 +105,7 @@ class TonnetzModel:
         if coord in self.pitch_class_cache:
             return self.pitch_class_cache[coord]
 
-        midi = utils.coord_to_midi(coord, self.base_midi)
+        midi = utils.coord_to_midi(coord, self.base_midi_for_naming)
         pitch_class = utils.midi_to_pitch_class_name(midi, self.use_sharps)
 
         self.pitch_class_cache[coord] = pitch_class

@@ -57,26 +57,25 @@ class InteractionConfig:
 @dataclass
 class MusicConfig:
     """
-    Defines music theory constants and the Tonnetz grid geometry.
+    Defines music theory constants and the Tonnetz grid geometry using
+    an axial coordinate system (q, r).
 
-    The grid maps (row, col) coordinates to MIDI pitches using a sheared
-    grid formula to create the triangular Tonnetz layout. The formula is:
-    midi(r, c) = ORIGIN_MIDI
-                 + (-r) * PITCH_INCR_VERTICAL
-                 + c * (PITCH_INCR_HORIZONTAL_EVEN if r % 2 == 0 else PITCH_INCR_HORIZONTAL_ODD)
+    The grid maps (q, r) coordinates to MIDI pitches using a linear
+    transformation, which is ideal for representing the consistent intervals
+    of a Tonnetz grid. The formula is:
+    midi(q, r) = ORIGIN_MIDI + q * PITCH_INCR_Q + r * PITCH_INCR_R
     """
 
     ORIGIN_NOTE: str = "C4"
     DEFAULT_USE_SHARPS: bool = True
 
-    # The pitch change for moving one step vertically in the grid (e.g., C -> G).
-    # This corresponds to the interval of a Perfect Fifth.
-    PITCH_INCR_VERTICAL: int = 7
+    # The pitch change for moving one step along the 'q' axis.
+    # Corresponds to the interval of a Major Third.
+    PITCH_INCR_Q: int = 4
 
-    # The pitch change for moving one step horizontally. This value
-    # alternates by row to create the characteristic triangular pattern.
-    PITCH_INCR_HORIZONTAL_EVEN: int = 4  # Major Third
-    PITCH_INCR_HORIZONTAL_ODD: int = 3  # minor Third
+    # The pitch change for moving one step along the 'r' axis.
+    # Corresponds to the interval of a Perfect Fifth.
+    PITCH_INCR_R: int = 7
 
 
 @dataclass

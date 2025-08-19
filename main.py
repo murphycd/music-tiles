@@ -21,6 +21,8 @@ from viewport import Viewport
 from tonnetz import TonnetzModel
 from renderer import GridRenderer
 from midi_handler import MidiHandler
+from note_mapper import NoteMapper
+from midi_controller import MidiController
 import utils
 
 
@@ -30,25 +32,29 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Musical Tile Grid")
-        self.root.geometry("1100x700")  # Increased width for longer instrument names
+        self.root.geometry("1100x700")
 
         self.octave_label: Optional[tk.Label] = None
         self.enharmonic_button_text: Optional[tk.StringVar] = None
         self.instrument_var: Optional[tk.StringVar] = None
         self.instrument_list: Dict[str, int] = {}
 
+        # --- Component Initialization ---
+        self.model = TonnetzModel()
         self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH)
+        self.note_mapper = NoteMapper()
+        self.midi_controller = MidiController(self.midi_handler, self.note_mapper)
+        self.model.add_listener(self.midi_controller)
+
         if self.midi_handler.is_active:
             self.instrument_list = self.midi_handler.get_instruments()
             self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
 
-        self.model = TonnetzModel()
         self._setup_ui()
-
         self.viewport: Optional[Viewport] = None
         self.renderer: Optional[GridRenderer] = None
 
-        # Interaction State
+        # --- Interaction State ---
         self.render_mode = ViewConfig.DEFAULT_RENDER_MODE
         self.drag_mode = DragMode.NONE
         self.drag_start_pos: Tuple[int, int] = (0, 0)
@@ -59,16 +65,11 @@ class App:
         self._update_octave_label()
 
         self._bind_events()
-        # Ensure MIDI resources are cleaned up on window close.
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def _on_closing(self):
         """Handles window close events to clean up resources."""
-        # Turn off all playing notes before closing.
-        for coord, octave in self.model.selected_tiles.items():
-            midi_note = self.model.get_midi_note_for_coord(coord, octave)
-            self.midi_handler.note_off(midi_note)
-
+        self.model.clear_selection()
         self.midi_handler.close()
         self.root.destroy()
 
@@ -83,17 +84,17 @@ class App:
         self.renderer = GridRenderer(
             self.canvas, self.viewport, self.model, self.render_mode
         )
+        # The renderer is now also a listener for model changes.
+        self.model.add_listener(self.renderer)
 
     def _on_first_configure(self, event):
         """
         Initializes components on the first <Configure> event, which guarantees
         the canvas has a valid size. Then, rebinds to the standard resize handler.
         """
-        if self.viewport is None:  # Only run initialization once
+        if self.viewport is None:
             self._initialize_components()
-            self._on_resize()  # Perform initial setup and draw
-
-            # Rebind to the standard resize handler for subsequent events
+            self._on_resize()
             self.canvas.bind("<Configure>", lambda e: self._on_resize())
 
     def _setup_ui(self):
@@ -109,11 +110,8 @@ class App:
             top_frame, text=instructions, anchor="w", bg=StyleConfig.COLOR_UI_BACKGROUND
         ).pack(side=tk.LEFT, padx=10, pady=5)
 
-        # Right-aligned frame for all controls
         right_frame = tk.Frame(top_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
         right_frame.pack(side=tk.RIGHT, padx=10, pady=5)
-
-        # Widgets are packed to the right, so add them in reverse order of appearance.
 
         self.octave_label = tk.Label(
             right_frame, text="", width=15, bg=StyleConfig.COLOR_UI_BACKGROUND
@@ -136,10 +134,8 @@ class App:
             right_frame, text="Clear & Reset View", command=self._clear_and_reset
         ).pack(side=tk.RIGHT, padx=5)
 
-        # Instrument Selector (packed last to appear furthest left in the right_frame)
         instrument_frame = tk.Frame(right_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
         instrument_frame.pack(side=tk.RIGHT, padx=5)
-
         tk.Label(
             instrument_frame, text="Instrument:", bg=StyleConfig.COLOR_UI_BACKGROUND
         ).pack(side=tk.LEFT)
@@ -152,14 +148,13 @@ class App:
         )
 
         if self.midi_handler.is_active and self.instrument_list:
-            # Find the key (name) for the default program number
             default_name = next(
                 (
                     name
                     for name, num in self.instrument_list.items()
                     if num == MidiConfig.DEFAULT_INSTRUMENT
                 ),
-                instrument_names[0],  # Fallback to the first instrument
+                instrument_names[0],
             )
             self.instrument_var.set(default_name)
         else:
@@ -169,14 +164,12 @@ class App:
             instrument_frame,
             self.instrument_var,
             *instrument_names,
-            # command=self._change_instrument, # Removed to fix Pylance error
         )
         if self.instrument_var:
             self.instrument_var.trace_add("write", self._on_instrument_var_change)
 
-        instrument_menu.config(width=25)  # Give more space for long names
+        instrument_menu.config(width=25)
         instrument_menu.pack(side=tk.LEFT)
-
         if not self.midi_handler.is_active or not self.instrument_list:
             instrument_menu.config(state=tk.DISABLED)
 
@@ -231,37 +224,25 @@ class App:
 
     def _bind_events(self):
         """Binds all mouse and window events."""
-        # This initial bind ensures components are created with correct dimensions.
         self.canvas.bind("<Configure>", self._on_first_configure)
-
         self.canvas.bind("<ButtonPress>", self._on_press)
         self.canvas.bind("<B1-Motion>", self._on_drag)
-        self.canvas.bind("<B2-Motion>", self._on_drag)  # Middle mouse drag
+        self.canvas.bind("<B2-Motion>", self._on_drag)
         self.canvas.bind("<ButtonRelease>", self._on_release)
-        self.canvas.bind("<MouseWheel>", self._on_zoom)  # Windows, MacOS
-        self.canvas.bind("<Button-4>", self._on_zoom)  # Linux scroll up
-        self.canvas.bind("<Button-5>", self._on_zoom)  # Linux scroll down
+        self.canvas.bind("<MouseWheel>", self._on_zoom)
+        self.canvas.bind("<Button-4>", self._on_zoom)
+        self.canvas.bind("<Button-5>", self._on_zoom)
 
     def _clear_and_reset(self):
         """Clears the selection and resets the viewport to its initial state."""
         if not self.renderer or not self.viewport:
             return
-
-        # Turn off all playing notes before clearing the model state.
-        for coord, octave in self.model.selected_tiles.items():
-            midi_note = self.model.get_midi_note_for_coord(coord, octave)
-            self.midi_handler.note_off(midi_note)
-
         self.model.clear_selection()
-
-        # Reset the viewport's pan and zoom to the initial state.
         self.viewport.reset(
             self.canvas.winfo_width(),
             self.canvas.winfo_height(),
             ViewConfig.INITIAL_TILES_ON_SCREEN,
         )
-
-        # Redraw the entire canvas to reflect the cleared selection and reset view.
         self.renderer.redraw_full()
 
     def _on_resize(self):
@@ -277,38 +258,19 @@ class App:
         )
         self.renderer.redraw_full()
 
-    def _toggle_tile_and_midi(self, coord: Tuple[int, int]):
-        """Toggles a single tile's selection and sends corresponding MIDI messages."""
-        was_selected = self.model.is_selected(coord)
-
-        if was_selected:
-            old_octave = self.model.get_octave(coord)
-            if old_octave is not None:
-                midi_note = self.model.get_midi_note_for_coord(coord, old_octave)
-                self.midi_handler.note_off(midi_note)
-
-        self.model.toggle_selection(coord, self.global_octave)
-
-        is_now_selected = self.model.is_selected(coord)
-        if is_now_selected:
-            new_octave = self.model.get_octave(coord)
-            if new_octave is not None:
-                midi_note = self.model.get_midi_note_for_coord(coord, new_octave)
-                self.midi_handler.note_on(midi_note, MidiConfig.DEFAULT_VELOCITY)
-
     def _on_press(self, event):
         """Handles the start of any mouse action."""
-        if not self.renderer or not self.viewport:
+        if not self.viewport:
             return
 
         self.drag_start_pos = (event.x, event.y)
         self.drag_button = event.num
         self.drag_affected_coords.clear()
 
-        if event.num == 1:  # Left Button
+        if event.num == 1:
             self.drag_mode = DragMode.SELECT
             self.drag_last_coord = self.viewport.canvas_to_world_int(event.x, event.y)
-        elif event.num == 2:  # Middle Button
+        elif event.num == 2:
             self.drag_mode = DragMode.PAN
             self.canvas.config(cursor="fleur")
 
@@ -332,7 +294,6 @@ class App:
             if current_coord == self.drag_last_coord:
                 return
 
-            coords_to_update = set()
             for coord in utils.bresenham_line(
                 self.drag_last_coord[0],
                 self.drag_last_coord[1],
@@ -340,17 +301,13 @@ class App:
                 current_coord[1],
             ):
                 if coord not in self.drag_affected_coords:
-                    self._toggle_tile_and_midi(coord)
+                    self.model.toggle_selection(coord, self.global_octave)
                     self.drag_affected_coords.add(coord)
-                    coords_to_update.add(coord)
-
             self.drag_last_coord = current_coord
-            if coords_to_update:
-                self.renderer.update_visuals(coords_to_update)
 
     def _on_release(self, event):
         """Handles the end of a mouse action, processing clicks."""
-        if not self.renderer or not self.viewport:
+        if not self.viewport:
             return
 
         dist_sq = (self.drag_start_pos[0] - event.x) ** 2 + (
@@ -360,25 +317,15 @@ class App:
 
         if self.drag_button == 1 and is_click:
             coord = self.viewport.canvas_to_world_int(event.x, event.y)
-            self._toggle_tile_and_midi(coord)
-            self.renderer.update_visuals({coord})
+            self.model.toggle_selection(coord, self.global_octave)
 
         elif self.drag_button == 3 and is_click:
             coord = self.viewport.canvas_to_world_int(event.x, event.y)
             if self.model.is_selected(coord):
-                old_octave = self.model.get_octave(coord)
                 new_octave = self.model.increment_octave(coord)
-
-                if new_octave is not None and old_octave is not None:
-                    old_midi = self.model.get_midi_note_for_coord(coord, old_octave)
-                    new_midi = self.model.get_midi_note_for_coord(coord, new_octave)
-
-                    self.midi_handler.note_off(old_midi)
-                    self.midi_handler.note_on(new_midi, MidiConfig.DEFAULT_VELOCITY)
-
+                if new_octave is not None:
                     self.global_octave = new_octave
                     self._update_octave_label()
-                    self.renderer.update_visuals({coord})
             else:
                 min_o, max_o = OctaveConfig.MIN_OCTAVE, OctaveConfig.MAX_OCTAVE
                 span = max_o - min_o + 1

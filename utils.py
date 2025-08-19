@@ -86,17 +86,12 @@ def note_to_midi(note_str: str) -> int:
 
 def coord_to_midi(coord: Tuple[int, int], base_midi: int) -> int:
     """
-    Calculates the absolute MIDI value for a given grid coordinate based
-    on the geometric formula defined in MusicConfig.
+    Calculates the absolute MIDI value for a given axial grid coordinate (q, r).
     """
-    row, col = coord
-    vertical_offset = (-row) * MusicConfig.PITCH_INCR_VERTICAL
-    horizontal_offset = (
-        col * MusicConfig.PITCH_INCR_HORIZONTAL_EVEN
-        if row % 2 == 0
-        else col * MusicConfig.PITCH_INCR_HORIZONTAL_ODD
-    )
-    return base_midi + vertical_offset + horizontal_offset
+    q, r = coord
+    q_offset = q * MusicConfig.PITCH_INCR_Q
+    r_offset = r * MusicConfig.PITCH_INCR_R
+    return base_midi + q_offset + r_offset
 
 
 def midi_to_pitch_class_name(midi: int, use_sharps: bool) -> str:
