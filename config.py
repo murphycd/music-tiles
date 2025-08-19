@@ -95,3 +95,13 @@ class MidiConfig:
     DEFAULT_VELOCITY: int = 100
     SOUNDFONT_PATH: str = "soundfonts/MuseScore_General.sf3"
     DEFAULT_INSTRUMENT: int = 85
+
+"""Added"""
+@dataclass
+class TuningConfig:
+    #12-JI
+    CENTS_PERFECT_FIFTH: float = 1.955 #3/2 (+2 cents)
+    CENTS_MAJOR_THIRD: float = -13.686 #5/4 (-14 cents)
+    CENTS_MINOR_THIRD: float = 15.641 #6/5 (-16 cents)
+
+    PITCH_BEND_RANGE_SEMITONES: int = 2

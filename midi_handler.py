@@ -5,7 +5,8 @@ high-level object-oriented API.
 """
 import sys
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, Tuple, Optional
+from config import TuningConfig
 
 # This block is only processed by type checkers.
 # We import 'fluidsynth' with an alias to create a name that will not
@@ -32,10 +33,14 @@ class MidiHandler:
         """
         # The type hint uses the aliased name inside a string literal.
         # This is unambiguous and works for both runtime and type checking.
-        self.synth: fluidsynth_for_typing.Synth | None = None
+        self.synth: "fluidsynth_for_typing.Synth | None" = None
         self.sfid: int | None = None
         self.is_active = False
-
+        # self.midi.out = None
+        self.instrument_list: Dict[str, int] = {}
+        self.available_channels:List[int] = [ch for ch in range(16) if ch != 9] #uses channels 0-8, and 10-15 avoiding 9 for "percussion"
+        self.active_note: Dict[Tuple, Tuple[int, int]] = {} #tacks which note_id is playing on which channel and it's pitch
+        
         if fluidsynth is None:
             return
 
@@ -94,27 +99,64 @@ class MidiHandler:
 
         return instruments
 
-    def program_select(self, program_num: int, channel: int = 0):
+    def program_select(self, program_num: int):
         """Changes the instrument for a given channel."""
         if self.is_active and self.synth and self.sfid is not None:
-            self.synth.program_select(channel, self.sfid, 0, program_num)
+            for ch in range(16):
+                self.synth.program_select(ch, self.sfid, 0, program_num)
 
-    def note_on(self, pitch: int, velocity: int = 100, channel: int = 0):
-        """Sends a Note On message."""
-        if self.is_active and self.synth and 0 <= pitch <= 127:
-            self.synth.noteon(channel, pitch, velocity)
+    def _cents_to_pitch_bend(self, cents: float) -> int:
+        bend_fraction = cents / (TuningConfig.PITCH_BEND_RANGE_SEMITONES * 100)
+        bend_value = round(8192 + bend_fraction * 8191)
+        return max(0, min(16383, bend_value))
+    
+      # NEW: The primary method for playing a tuned note.
+    def play_tuned_note(self, note_id: Tuple, midi_note: int, cents: float, velocity: int):
+        """Plays a note with a specific tuning on an available channel."""
+        if not self.is_active or not self.synth or not self.available_channels:
+            print("Warning: No available MIDI channels to play note.", file=sys.stderr)
+            return
 
-    def note_off(self, pitch: int, channel: int = 0):
-        """Sends a Note Off message."""
-        if self.is_active and self.synth and 0 <= pitch <= 127:
-            self.synth.noteoff(channel, pitch)
+        if note_id in self.active_notes:
+            return  # Note is already playing
+
+        channel = self.available_channels.pop(0)
+        self.active_notes[note_id] = (channel, midi_note)
+
+        # 1. Send Pitch Bend message for the channel.
+        # The pyfluidsynth library exposes this as synth.pitch_bend().
+        pitch_bend_val = self._cents_to_pitch_bend(cents)
+        self.synth.pitch_bend(channel, pitch_bend_val)
+        
+        # 2. Send Note On message on the same channel.
+        self.synth.noteon(channel, midi_note, velocity)
+
+    def note_off(self, note_id: Tuple):
+        """Stops a note based on its unique ID and frees its channel."""
+        if not self.is_active or not self.synth or note_id not in self.active_notes:
+            return
+            
+        channel, pitch = self.active_notes.pop(note_id)
+
+        # 1. Send Note Off message.
+        self.synth.noteoff(channel, pitch)
+        
+        # 2. Reset pitch bend on the channel (good practice).
+        self.synth.pitch_bend(channel, 8192)
+        
+        # 3. Return the channel to the pool.
+        self.available_channels.append(channel)
+        self.available_channels.sort()
 
     def close(self):
         """
-        Closes the synthesizer and cleans up resources by calling the
-        Synth object's delete() method as shown in the documentation.
+        Stops all sounding notes and closes the synthesizer.
         """
         if self.is_active and self.synth:
+            # Turn off all currently playing notes before shutting down.
+            for note_id in list(self.active_notes.keys()):
+                self.note_off(note_id)
+            
             self.synth.delete()
             self.synth = None
             self.is_active = False

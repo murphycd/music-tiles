@@ -3,7 +3,7 @@
 Manages the application's data model, including tile selection and music theory.
 """
 from typing import Tuple, Dict, Optional
-from config import MusicConfig, OctaveConfig
+from config import MusicConfig, OctaveConfig, TuningConfig #added TuningConfig
 import utils
 
 
@@ -57,20 +57,33 @@ class TonnetzModel:
         new_octave = (current_octave - min_o + 1) % span + min_o
         self.selected_tiles[coord] = new_octave
         return new_octave
+    """Added"""
+    def get_note_properties(self,coord: Tuple[int, int], octave: int) -> Tuple[int, float]:
+        #calculates the midi note, and the deviation in cents
+        base_pitch_midi = utils.coord_to_midi(coord, self.base_midi) # Get the MIDI note number for the pitch class, relative to the grid's origin.
+        pitch_class = base_pitch_midi % 12 # Extract the pitch class (0-11) from that base note.
+        midi_note = 12 * (octave + 1) + pitch_class # Calculate the final MIDI note using the desired octave.MIDI formula: 12 * (octave + 1) + pitch_class
 
+        r, c = coord
+        cents_deviation = 0.0
+        cents_deviation -= r * TuningConfig.CENTS_PERFECT_FIFTH
+
+        for i in range(abs(c)):
+            current_row_parity = (r + i) % 2
+            if r % 2 == 0:
+                cents_deviation += TuningConfig.CENTS_MAJOR_THIRD if c > 0 else -TuningConfig.CENTS_MAJOR_THIRD
+            else:
+                cents_deviation += TuningConfig.CENTS_MINOR_THIRD if c > 0 else -TuningConfig.CENTS_MINOR_THIRD
+
+        return midi_note, cents_deviation
+    
+        
     def get_midi_note_for_coord(self, coord: Tuple[int, int], octave: int) -> int:
         """
         Calculates the absolute MIDI note number for a coordinate at a specific octave.
         """
-        # Get the MIDI note number for the pitch class, relative to the grid's origin.
-        base_pitch_midi = utils.coord_to_midi(coord, self.base_midi)
-
-        # Extract the pitch class (0-11) from that base note.
-        pitch_class = base_pitch_midi % 12
-
-        # Calculate the final MIDI note using the desired octave.
-        # MIDI formula: 12 * (octave + 1) + pitch_class
-        return 12 * (octave + 1) + pitch_class
+        midi_note, _ = self.get_note_properties(coord, octave)
+        return midi_note
 
     def get_display_note_for_coord(self, coord: Tuple[int, int]) -> str:
         """

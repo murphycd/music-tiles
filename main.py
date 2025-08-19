@@ -392,7 +392,7 @@ class App:
     def _on_zoom(self, event):
         """Handles zooming with the mouse wheel."""
         if not self.renderer or not self.viewport:
-            return
+            return  
 
         if event.num == 4 or event.delta > 0:
             scale = InteractionConfig.ZOOM_FACTOR
