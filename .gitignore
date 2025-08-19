@@ -20,5 +20,5 @@ env/
 *.tmp
 *.bak
 
-!soundfonts/.gitkeep
 soundfonts/*
+!soundfonts/MuseScore_General.sf3

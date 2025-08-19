@@ -85,7 +85,5 @@ class MidiConfig:
     """Defines constants for MIDI output."""
 
     DEFAULT_VELOCITY: int = 100
-    # IMPORTANT: Update this path to a valid .sf2 SoundFont file on your system.
-    # A common, high-quality free option is FluidR3_GM.sf2.
-    SOUNDFONT_PATH: str = "soundfonts/Sonatina_Symphonic_Orchestra.sf2"
-    DEFAULT_INSTRUMENT: int = 0  # 0: Acoustic Grand Piano in GM standard
+    SOUNDFONT_PATH: str = "soundfonts/MuseScore_General.sf3"
+    DEFAULT_INSTRUMENT: int = 85
