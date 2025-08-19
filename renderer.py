@@ -27,7 +27,7 @@ class GridRenderer:
         self.model = model
         self.render_mode = render_mode
 
-        # Maps (row, col) -> {'shape': id, 'text': id}
+        # Maps (q, r) -> {'shape': id, 'text': id}
         self.visible_items: Dict[Tuple[int, int], Dict[str, Any]] = {}
 
         # Pre-calculate font metrics for dynamic sizing
@@ -69,15 +69,15 @@ class GridRenderer:
         if width <= 1 or height <= 1:
             return
 
-        min_r, max_r, min_c, max_c = self.viewport.get_visible_grid_rect(width, height)
+        min_q, max_q, min_r, max_r = self.viewport.get_visible_grid_rect(width, height)
 
-        num_tiles = (max_r - min_r) * (max_c - min_c)
+        num_tiles = (max_q - min_q) * (max_r - min_r)
         if num_tiles > ((ViewConfig.MAX_TILES_ON_SCREEN + 10) ** 2):
             print(f"Render aborted: Too many tiles requested ({num_tiles}).")
             return
 
         required_coords = set(
-            (r, c) for r in range(min_r, max_r) for c in range(min_c, max_c)
+            (q, r) for q in range(min_q, max_q) for r in range(min_r, max_r)
         )
         current_coords = set(self.visible_items.keys())
 
@@ -135,11 +135,13 @@ class GridRenderer:
             self._update_hex_position(coord)
 
     def _create_rect_tile(self, coord: Tuple[int, int]):
-        """Creates new canvas items for a rectangular tile."""
-        r, c = coord
+        """Creates new canvas items for a rectangular tile from (q,r) coords."""
+        q, r = coord
         zoom = self.viewport.zoom
         offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
-        x0, y0 = c * zoom - offset_x, r * zoom - offset_y
+        # The q-axis maps to screen-x, the -r-axis maps to screen-y
+        x0 = q * zoom - offset_x
+        y0 = -r * zoom - offset_y
         x1, y1 = x0 + zoom, y0 + zoom
 
         rect_id = self.canvas.create_rectangle(x0, y0, x1, y1, tags="tile")
@@ -156,18 +158,22 @@ class GridRenderer:
 
     def _create_hex_tile(self, coord: Tuple[int, int]):
         """Creates new canvas items for a hexagonal tile."""
-        r, c = coord
-        hex_height = self.viewport.zoom
-        hex_width = (math.sqrt(3) / 2) * hex_height
+        q, r = coord
+        size = self.viewport.zoom / 2.0  # Hex radius
         offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
-        size = hex_height / 2
 
-        center_y = r * (hex_height * 0.75) - offset_y
-        center_x = c * hex_width + ((r & 1) * hex_width / 2) - offset_x
+        # Convert axial (q, r) to world pixel center
+        center_x_world = size * (math.sqrt(3) * q + math.sqrt(3) / 2 * r)
+        center_y_world = size * (3.0 / 2.0 * r)
+
+        # Convert to canvas coordinates
+        center_x = center_x_world - offset_x
+        center_y = center_y_world - offset_y
+
         vertices = self._get_hexagon_vertices(center_x, center_y, size)
-
         poly_id = self.canvas.create_polygon(vertices, tags="tile")
         text_id = None
+
         if self.viewport.zoom > ViewConfig.NOTE_VISIBILITY_ZOOM_THRESHOLD:
             note_name = self.model.get_display_note_for_coord(coord)
             font_size = self._calculate_font_size()
@@ -179,11 +185,12 @@ class GridRenderer:
         self._update_tile_style(coord)
 
     def _update_rect_position(self, coord: Tuple[int, int]):
-        """Updates the coordinates of an existing rectangular tile."""
-        r, c = coord
+        """Updates the coordinates of an existing rectangular tile from (q,r)."""
+        q, r = coord
         zoom = self.viewport.zoom
         offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
-        x0, y0 = c * zoom - offset_x, r * zoom - offset_y
+        x0 = q * zoom - offset_x
+        y0 = -r * zoom - offset_y
         x1, y1 = x0 + zoom, y0 + zoom
 
         items = self.visible_items[coord]
@@ -192,12 +199,15 @@ class GridRenderer:
         text_visible = zoom > ViewConfig.NOTE_VISIBILITY_ZOOM_THRESHOLD
         text_exists = items["text"] is not None
         if text_visible and not text_exists:
+            # Recreate to add text
             self._delete_tile(coord)
             self._create_rect_tile(coord)
         elif not text_visible and text_exists:
+            # Delete text
             self.canvas.delete(items["text"])
             items["text"] = None
         elif text_visible and text_exists:
+            # Update text position and font
             font_size = self._calculate_font_size()
             font = (StyleConfig.FONT_FAMILY, font_size, "bold")
             self.canvas.coords(items["text"], x0 + zoom / 2, y0 + zoom / 2)
@@ -205,16 +215,16 @@ class GridRenderer:
 
     def _update_hex_position(self, coord: Tuple[int, int]):
         """Updates the coordinates of an existing hexagonal tile."""
-        r, c = coord
-        hex_height = self.viewport.zoom
-        hex_width = (math.sqrt(3) / 2) * hex_height
+        q, r = coord
+        size = self.viewport.zoom / 2.0
         offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
-        size = hex_height / 2
 
-        center_y = r * (hex_height * 0.75) - offset_y
-        center_x = c * hex_width + ((r & 1) * hex_width / 2) - offset_x
+        center_x_world = size * (math.sqrt(3) * q + math.sqrt(3) / 2 * r)
+        center_y_world = size * (3.0 / 2.0 * r)
+        center_x = center_x_world - offset_x
+        center_y = center_y_world - offset_y
+
         vertices = self._get_hexagon_vertices(center_x, center_y, size)
-
         items = self.visible_items[coord]
         self.canvas.coords(items["shape"], *vertices)
 

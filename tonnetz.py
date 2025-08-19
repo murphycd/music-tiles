@@ -11,7 +11,7 @@ class TonnetzModel:
     """Holds the state and logic of the musical grid, independent of the UI."""
 
     def __init__(self):
-        # Maps selected (row, col) coordinates to their octave
+        # Maps selected (q, r) coordinates to their octave
         self.selected_tiles: Dict[Tuple[int, int], int] = {}
         self.pitch_class_cache: dict[Tuple[int, int], str] = {}
         self.base_midi = utils.note_to_midi(MusicConfig.ORIGIN_NOTE)
