@@ -10,13 +10,13 @@ from typing import Optional, Tuple, Set, Dict
 
 from config import (
     DragMode,
+    RenderMode,
     StyleConfig,
     ViewConfig,
     InteractionConfig,
     OctaveConfig,
     MusicConfig,
     MidiConfig,
-    # UI_INSTRUMENTS is no longer imported
 )
 from viewport import Viewport
 from tonnetz import TonnetzModel
@@ -50,6 +50,7 @@ class App:
         self.renderer: Optional[GridRenderer] = None
 
         # Interaction State
+        self.render_mode = ViewConfig.DEFAULT_RENDER_MODE
         self.drag_mode = DragMode.NONE
         self.drag_start_pos: Tuple[int, int] = (0, 0)
         self.drag_last_coord: Optional[Tuple[int, int]] = None
@@ -78,8 +79,11 @@ class App:
             self.canvas.winfo_width(),
             self.canvas.winfo_height(),
             ViewConfig.INITIAL_TILES_ON_SCREEN,
+            self.render_mode,
         )
-        self.renderer = GridRenderer(self.canvas, self.viewport, self.model)
+        self.renderer = GridRenderer(
+            self.canvas, self.viewport, self.model, self.render_mode
+        )
 
     def _on_first_configure(self, event):
         """
@@ -126,6 +130,10 @@ class App:
         self._update_enharmonic_button_text()
 
         tk.Button(
+            right_frame, text="Toggle Layout", command=self._toggle_render_mode
+        ).pack(side=tk.RIGHT, padx=5)
+
+        tk.Button(
             right_frame, text="Clear & Reset View", command=self._clear_and_reset
         ).pack(side=tk.RIGHT, padx=5)
 
@@ -162,8 +170,11 @@ class App:
             instrument_frame,
             self.instrument_var,
             *instrument_names,
-            command=self._change_instrument,
+            # command=self._change_instrument, # Removed to fix Pylance error
         )
+        if self.instrument_var:
+            self.instrument_var.trace_add("write", self._on_instrument_var_change)
+
         instrument_menu.config(width=25)  # Give more space for long names
         instrument_menu.pack(side=tk.LEFT)
 
@@ -172,6 +183,13 @@ class App:
 
         self.canvas = tk.Canvas(self.root, bg="white", highlightthickness=0)
         self.canvas.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
+
+    def _on_instrument_var_change(self, *args):
+        """Callback for when the instrument StringVar changes."""
+        if self.instrument_var:
+            instrument_name = self.instrument_var.get()
+            if instrument_name:
+                self._change_instrument(instrument_name)
 
     def _change_instrument(self, instrument_name: str):
         """Changes the current MIDI instrument based on UI selection."""
@@ -197,6 +215,19 @@ class App:
             return
         self.model.set_enharmonic_preference(not self.model.use_sharps)
         self._update_enharmonic_button_text()
+        self.renderer.redraw_full()
+
+    def _toggle_render_mode(self):
+        """Switches between rectangular and hexagonal rendering."""
+        if not self.renderer or not self.viewport:
+            return
+        self.render_mode = (
+            RenderMode.HEXAGON
+            if self.render_mode == RenderMode.RECTANGLE
+            else RenderMode.RECTANGLE
+        )
+        self.viewport.set_render_mode(self.render_mode)
+        self.renderer.set_render_mode(self.render_mode)
         self.renderer.redraw_full()
 
     def _bind_events(self):
@@ -242,12 +273,15 @@ class App:
             self.instrument_var.set(default_name)
             self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
 
+        self.render_mode = ViewConfig.DEFAULT_RENDER_MODE
         self.viewport = Viewport(
             self.canvas.winfo_width(),
             self.canvas.winfo_height(),
             ViewConfig.INITIAL_TILES_ON_SCREEN,
+            self.render_mode,
         )
         self.renderer.viewport = self.viewport
+        self.renderer.set_render_mode(self.render_mode)
         self.renderer.redraw_full()
 
     def _on_resize(self):

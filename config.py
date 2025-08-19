@@ -14,6 +14,13 @@ class DragMode(Enum):
     PAN = auto()
 
 
+class RenderMode(Enum):
+    """Defines the rendering style for the grid."""
+
+    RECTANGLE = auto()
+    HEXAGON = auto()
+
+
 @dataclass
 class StyleConfig:
     """Defines the visual styling of the application."""
@@ -36,6 +43,7 @@ class ViewConfig:
     MAX_TILES_ON_SCREEN: int = 18
     INITIAL_TILES_ON_SCREEN: int = 5
     NOTE_VISIBILITY_ZOOM_THRESHOLD: float = 25.0
+    DEFAULT_RENDER_MODE: RenderMode = RenderMode.RECTANGLE
 
 
 @dataclass

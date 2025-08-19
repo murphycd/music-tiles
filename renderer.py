@@ -4,22 +4,30 @@ Handles all drawing operations on the Tkinter Canvas.
 """
 import tkinter as tk
 import tkinter.font as tkFont
+import math
 from typing import Tuple, Dict, Any, Set
 
 from viewport import Viewport
 from tonnetz import TonnetzModel
-from config import StyleConfig, ViewConfig
+from config import StyleConfig, ViewConfig, RenderMode
 
 
 class GridRenderer:
     """Renders the grid state onto the canvas based on the viewport."""
 
-    def __init__(self, canvas: tk.Canvas, viewport: Viewport, model: TonnetzModel):
+    def __init__(
+        self,
+        canvas: tk.Canvas,
+        viewport: Viewport,
+        model: TonnetzModel,
+        render_mode: RenderMode,
+    ):
         self.canvas = canvas
         self.viewport = viewport
         self.model = model
+        self.render_mode = render_mode
 
-        # Maps (row, col) -> {'rect': id, 'text': id}
+        # Maps (row, col) -> {'shape': id, 'text': id}
         self.visible_items: Dict[Tuple[int, int], Dict[str, Any]] = {}
 
         # Pre-calculate font metrics for dynamic sizing
@@ -30,14 +38,25 @@ class GridRenderer:
         )
         self._ref_text_width = ref_font.measure("G#6")
 
+    def set_render_mode(self, mode: RenderMode):
+        """Sets the current render mode and clears visible items."""
+        if self.render_mode != mode:
+            self.render_mode = mode
+            # Clear canvas completely as shapes are different
+            for coord in list(self.visible_items.keys()):
+                self._delete_tile(coord)
+            self.visible_items.clear()
+
     def _calculate_font_size(self) -> int:
         """Calculates the optimal font size to fit text within a tile."""
         if self._ref_text_width == 0:
             return self._min_font_size
 
+        # For hexes, width is slightly less than zoom, so scale factor is smaller
+        scale_factor = 0.85 if self.render_mode == RenderMode.HEXAGON else 0.9
         tile_width = self.viewport.zoom
         estimated_size = (tile_width / self._ref_text_width) * self._ref_font_size
-        padded_size = int(estimated_size * 0.9)
+        padded_size = int(estimated_size * scale_factor)
         return max(self._min_font_size, padded_size)
 
     def redraw_full(self):
@@ -52,30 +71,24 @@ class GridRenderer:
 
         min_r, max_r, min_c, max_c = self.viewport.get_visible_grid_rect(width, height)
 
-        # Performance safety check: Abort if trying to render too many tiles.
         num_tiles = (max_r - min_r) * (max_c - min_c)
-        if num_tiles > ((ViewConfig.MAX_TILES_ON_SCREEN + 5) ** 2):
+        if num_tiles > ((ViewConfig.MAX_TILES_ON_SCREEN + 10) ** 2):
             print(f"Render aborted: Too many tiles requested ({num_tiles}).")
             return
 
-        # 1. Determine the set of required tiles
         required_coords = set(
             (r, c) for r in range(min_r, max_r) for c in range(min_c, max_c)
         )
         current_coords = set(self.visible_items.keys())
 
-        # 2. Find which items to remove, add, or update
         coords_to_remove = current_coords - required_coords
         coords_to_add = required_coords - current_coords
         coords_to_update = current_coords.intersection(required_coords)
 
-        # 3. Perform canvas operations
         for coord in coords_to_remove:
             self._delete_tile(coord)
-
         for coord in coords_to_add:
             self._create_tile(coord)
-
         for coord in coords_to_update:
             self._update_tile_position(coord)
 
@@ -91,58 +104,96 @@ class GridRenderer:
         """Deletes the canvas items associated with a coordinate."""
         if coord in self.visible_items:
             items = self.visible_items.pop(coord)
-            self.canvas.delete(items["rect"])
+            self.canvas.delete(items["shape"])
             if items["text"] is not None:
                 self.canvas.delete(items["text"])
 
+    def _get_hexagon_vertices(
+        self, center_x: float, center_y: float, size: float
+    ) -> list[float]:
+        """Calculates the 6 vertices for a pointy-topped hexagon."""
+        vertices = []
+        for i in range(6):
+            # Start angle is 30 degrees (pi/6) for pointy-top
+            angle = math.pi / 6 + i * math.pi / 3
+            vertices.append(center_x + size * math.cos(angle))
+            vertices.append(center_y + size * math.sin(angle))
+        return vertices
+
     def _create_tile(self, coord: Tuple[int, int]):
-        """Creates new canvas items for a coordinate."""
+        """Dispatches to the correct tile creation method based on render mode."""
+        if self.render_mode == RenderMode.RECTANGLE:
+            self._create_rect_tile(coord)
+        else:
+            self._create_hex_tile(coord)
+
+    def _update_tile_position(self, coord: Tuple[int, int]):
+        """Dispatches to the correct tile update method based on render mode."""
+        if self.render_mode == RenderMode.RECTANGLE:
+            self._update_rect_position(coord)
+        else:
+            self._update_hex_position(coord)
+
+    def _create_rect_tile(self, coord: Tuple[int, int]):
+        """Creates new canvas items for a rectangular tile."""
         r, c = coord
         zoom = self.viewport.zoom
         offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
-
-        x0 = c * zoom - offset_x
-        y0 = r * zoom - offset_y
+        x0, y0 = c * zoom - offset_x, r * zoom - offset_y
         x1, y1 = x0 + zoom, y0 + zoom
 
         rect_id = self.canvas.create_rectangle(x0, y0, x1, y1, tags="tile")
-
         text_id = None
         if zoom > ViewConfig.NOTE_VISIBILITY_ZOOM_THRESHOLD:
             note_name = self.model.get_display_note_for_coord(coord)
             font_size = self._calculate_font_size()
             font = (StyleConfig.FONT_FAMILY, font_size, "bold")
             text_id = self.canvas.create_text(
-                x0 + zoom / 2,
-                y0 + zoom / 2,
-                text=note_name,
-                font=font,
-                tags="tile_text",
+                x0 + zoom / 2, y0 + zoom / 2, text=note_name, font=font, tags="text"
             )
-
-        self.visible_items[coord] = {"rect": rect_id, "text": text_id}
+        self.visible_items[coord] = {"shape": rect_id, "text": text_id}
         self._update_tile_style(coord)
 
-    def _update_tile_position(self, coord: Tuple[int, int]):
-        """Updates the coordinates of existing canvas items."""
+    def _create_hex_tile(self, coord: Tuple[int, int]):
+        """Creates new canvas items for a hexagonal tile."""
+        r, c = coord
+        hex_height = self.viewport.zoom
+        hex_width = (math.sqrt(3) / 2) * hex_height
+        offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
+        size = hex_height / 2
+
+        center_y = r * (hex_height * 0.75) - offset_y
+        center_x = c * hex_width + ((r & 1) * hex_width / 2) - offset_x
+        vertices = self._get_hexagon_vertices(center_x, center_y, size)
+
+        poly_id = self.canvas.create_polygon(vertices, tags="tile")
+        text_id = None
+        if self.viewport.zoom > ViewConfig.NOTE_VISIBILITY_ZOOM_THRESHOLD:
+            note_name = self.model.get_display_note_for_coord(coord)
+            font_size = self._calculate_font_size()
+            font = (StyleConfig.FONT_FAMILY, font_size, "bold")
+            text_id = self.canvas.create_text(
+                center_x, center_y, text=note_name, font=font, tags="text"
+            )
+        self.visible_items[coord] = {"shape": poly_id, "text": text_id}
+        self._update_tile_style(coord)
+
+    def _update_rect_position(self, coord: Tuple[int, int]):
+        """Updates the coordinates of an existing rectangular tile."""
         r, c = coord
         zoom = self.viewport.zoom
         offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
-
-        x0 = c * zoom - offset_x
-        y0 = r * zoom - offset_y
+        x0, y0 = c * zoom - offset_x, r * zoom - offset_y
         x1, y1 = x0 + zoom, y0 + zoom
 
         items = self.visible_items[coord]
-        self.canvas.coords(items["rect"], x0, y0, x1, y1)
+        self.canvas.coords(items["shape"], x0, y0, x1, y1)
 
-        # Handle text creation/deletion/update based on zoom
         text_visible = zoom > ViewConfig.NOTE_VISIBILITY_ZOOM_THRESHOLD
         text_exists = items["text"] is not None
-
         if text_visible and not text_exists:
             self._delete_tile(coord)
-            self._create_tile(coord)
+            self._create_rect_tile(coord)
         elif not text_visible and text_exists:
             self.canvas.delete(items["text"])
             items["text"] = None
@@ -150,6 +201,35 @@ class GridRenderer:
             font_size = self._calculate_font_size()
             font = (StyleConfig.FONT_FAMILY, font_size, "bold")
             self.canvas.coords(items["text"], x0 + zoom / 2, y0 + zoom / 2)
+            self.canvas.itemconfigure(items["text"], font=font)
+
+    def _update_hex_position(self, coord: Tuple[int, int]):
+        """Updates the coordinates of an existing hexagonal tile."""
+        r, c = coord
+        hex_height = self.viewport.zoom
+        hex_width = (math.sqrt(3) / 2) * hex_height
+        offset_x, offset_y = self.viewport.offset_x, self.viewport.offset_y
+        size = hex_height / 2
+
+        center_y = r * (hex_height * 0.75) - offset_y
+        center_x = c * hex_width + ((r & 1) * hex_width / 2) - offset_x
+        vertices = self._get_hexagon_vertices(center_x, center_y, size)
+
+        items = self.visible_items[coord]
+        self.canvas.coords(items["shape"], *vertices)
+
+        text_visible = self.viewport.zoom > ViewConfig.NOTE_VISIBILITY_ZOOM_THRESHOLD
+        text_exists = items["text"] is not None
+        if text_visible and not text_exists:
+            self._delete_tile(coord)
+            self._create_hex_tile(coord)
+        elif not text_visible and text_exists:
+            self.canvas.delete(items["text"])
+            items["text"] = None
+        elif text_visible and text_exists:
+            font_size = self._calculate_font_size()
+            font = (StyleConfig.FONT_FAMILY, font_size, "bold")
+            self.canvas.coords(items["text"], center_x, center_y)
             self.canvas.itemconfigure(items["text"], font=font)
 
     def _update_tile_style(self, coord: Tuple[int, int]):
@@ -171,7 +251,7 @@ class GridRenderer:
         )
 
         self.canvas.itemconfigure(
-            items["rect"], fill=fill, outline=StyleConfig.COLOR_TILE_OUTLINE
+            items["shape"], fill=fill, outline=StyleConfig.COLOR_TILE_OUTLINE
         )
         if items["text"] is not None:
             note_name = self.model.get_display_note_for_coord(coord)

@@ -5,6 +5,13 @@ high-level object-oriented API.
 """
 import sys
 import os
+from typing import TYPE_CHECKING
+
+# This block is only processed by type checkers.
+# We import 'fluidsynth' with an alias to create a name that will not
+# be overwritten at runtime, resolving type checker confusion.
+if TYPE_CHECKING:
+    import fluidsynth as fluidsynth_for_typing
 
 try:
     import fluidsynth
@@ -23,7 +30,9 @@ class MidiHandler:
         """
         Initializes the FluidSynth synthesizer using the high-level Synth API.
         """
-        self.synth: fluidsynth.Synth | None = None
+        # The type hint uses the aliased name inside a string literal.
+        # This is unambiguous and works for both runtime and type checking.
+        self.synth: fluidsynth_for_typing.Synth | None = None
         self.sfid: int | None = None
         self.is_active = False
 
@@ -39,24 +48,25 @@ class MidiHandler:
             return
 
         try:
+            # Use local variables for initialization; only assign to self on success.
             # 1. Create the Synth object.
-            self.synth = fluidsynth.Synth()
+            synth = fluidsynth.Synth()
 
-            # 2. Start the audio driver. Calling with no arguments lets
-            #    fluidsynth pick the best driver for the system.
-            self.synth.start()
+            # 2. Start the audio driver.
+            synth.start()
 
             # 3. Load the SoundFont.
-            self.sfid = self.synth.sfload(soundfont_path)
+            sfid = synth.sfload(soundfont_path)
 
+            # 4. Assign to instance attributes now that setup is complete.
+            self.synth = synth
+            self.sfid = sfid
             self.is_active = True
             print(f"FluidSynth initialized with SoundFont: {soundfont_path}")
 
         except Exception as e:
             print(f"Failed to initialize FluidSynth: {e}", file=sys.stderr)
-            # No need to call delete() on a failed initialization.
-            self.synth = None
-            self.is_active = False
+            # self.synth remains None and self.is_active remains False.
 
     def get_instruments(self, bank: int = 0) -> dict[str, int]:
         """
