@@ -6,7 +6,7 @@ Initializes the UI, creates the model, viewport, and renderer,
 and connects them all via event handlers.
 """
 import tkinter as tk
-from typing import Optional, Tuple, Set
+from typing import Optional, Tuple, Set, Dict
 
 from config import (
     DragMode,
@@ -16,6 +16,7 @@ from config import (
     OctaveConfig,
     MusicConfig,
     MidiConfig,
+    # UI_INSTRUMENTS is no longer imported
 )
 from viewport import Viewport
 from tonnetz import TonnetzModel
@@ -30,12 +31,18 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Musical Tile Grid")
-        self.root.geometry("900x700")
+        self.root.geometry("1100x700")  # Increased width for longer instrument names
 
         self.octave_label: Optional[tk.Label] = None
         self.enharmonic_button_text: Optional[tk.StringVar] = None
+        self.instrument_var: Optional[tk.StringVar] = None
+        self.instrument_list: Dict[str, int] = {}
 
-        self.midi_handler = MidiHandler()
+        self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH)
+        if self.midi_handler.is_active:
+            self.instrument_list = self.midi_handler.get_instruments()
+            self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
+
         self.model = TonnetzModel()
         self._setup_ui()
 
@@ -99,13 +106,16 @@ class App:
             top_frame, text=instructions, anchor="w", bg=StyleConfig.COLOR_UI_BACKGROUND
         ).pack(side=tk.LEFT, padx=10, pady=5)
 
-        # Right-aligned frame for button and octave label
+        # Right-aligned frame for all controls
         right_frame = tk.Frame(top_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
         right_frame.pack(side=tk.RIGHT, padx=10, pady=5)
 
-        tk.Button(
-            right_frame, text="Clear & Reset View", command=self._clear_and_reset
-        ).pack(side=tk.RIGHT, padx=5)
+        # Widgets are packed to the right, so add them in reverse order of appearance.
+
+        self.octave_label = tk.Label(
+            right_frame, text="", width=15, bg=StyleConfig.COLOR_UI_BACKGROUND
+        )
+        self.octave_label.pack(side=tk.RIGHT)
 
         self.enharmonic_button_text = tk.StringVar()
         tk.Button(
@@ -115,13 +125,60 @@ class App:
         ).pack(side=tk.RIGHT, padx=5)
         self._update_enharmonic_button_text()
 
-        self.octave_label = tk.Label(
-            right_frame, text="", width=15, bg=StyleConfig.COLOR_UI_BACKGROUND
+        tk.Button(
+            right_frame, text="Clear & Reset View", command=self._clear_and_reset
+        ).pack(side=tk.RIGHT, padx=5)
+
+        # Instrument Selector (packed last to appear furthest left in the right_frame)
+        instrument_frame = tk.Frame(right_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
+        instrument_frame.pack(side=tk.RIGHT, padx=5)
+
+        tk.Label(
+            instrument_frame, text="Instrument:", bg=StyleConfig.COLOR_UI_BACKGROUND
+        ).pack(side=tk.LEFT)
+
+        self.instrument_var = tk.StringVar(self.root)
+        instrument_names = (
+            list(self.instrument_list.keys())
+            if self.instrument_list
+            else ["MIDI Disabled"]
         )
-        self.octave_label.pack(side=tk.RIGHT)
+
+        if self.midi_handler.is_active and self.instrument_list:
+            # Find the key (name) for the default program number
+            default_name = next(
+                (
+                    name
+                    for name, num in self.instrument_list.items()
+                    if num == MidiConfig.DEFAULT_INSTRUMENT
+                ),
+                instrument_names[0],  # Fallback to the first instrument
+            )
+            self.instrument_var.set(default_name)
+        else:
+            self.instrument_var.set("MIDI Disabled")
+
+        instrument_menu = tk.OptionMenu(
+            instrument_frame,
+            self.instrument_var,
+            *instrument_names,
+            command=self._change_instrument,
+        )
+        instrument_menu.config(width=25)  # Give more space for long names
+        instrument_menu.pack(side=tk.LEFT)
+
+        if not self.midi_handler.is_active or not self.instrument_list:
+            instrument_menu.config(state=tk.DISABLED)
 
         self.canvas = tk.Canvas(self.root, bg="white", highlightthickness=0)
         self.canvas.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
+
+    def _change_instrument(self, instrument_name: str):
+        """Changes the current MIDI instrument based on UI selection."""
+        if self.midi_handler.is_active and self.instrument_list:
+            program_num = self.instrument_list.get(instrument_name)
+            if program_num is not None:
+                self.midi_handler.program_select(program_num)
 
     def _update_octave_label(self):
         """Updates the global octave display in the UI."""
@@ -170,6 +227,21 @@ class App:
         self._update_enharmonic_button_text()
         self.global_octave = OctaveConfig.INITIAL_OCTAVE
         self._update_octave_label()
+
+        # Reset instrument in UI and handler
+        if self.midi_handler.is_active and self.instrument_list and self.instrument_var:
+            instrument_names = list(self.instrument_list.keys())
+            default_name = next(
+                (
+                    name
+                    for name, num in self.instrument_list.items()
+                    if num == MidiConfig.DEFAULT_INSTRUMENT
+                ),
+                instrument_names[0],
+            )
+            self.instrument_var.set(default_name)
+            self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
+
         self.viewport = Viewport(
             self.canvas.winfo_width(),
             self.canvas.winfo_height(),

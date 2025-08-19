@@ -19,3 +19,6 @@ env/
 *.log
 *.tmp
 *.bak
+
+!soundfonts/.gitkeep
+soundfonts/*
