@@ -2,6 +2,7 @@
 """
 A subscriber that listens to model events and controls MIDI output.
 """
+import time
 from midi_handler import MidiHandler
 from note_mapper import NoteMapper
 from config import MidiConfig
@@ -53,8 +54,11 @@ class MidiController:
     def _on_tile_selected(self, event: TileSelectedEvent):
         """Handles tile selection by sending a MIDI Note On message."""
         midi_note, pitch_bend = self.note_mapper.coord_to_midi(event.coord, event.octave)
+        #debug pitch_bend and note 
+        print(f"Playing Note: {midi_note}, Pitch Bend:{pitch_bend}")
         channel = self._get_next_channel()
         self.midi_handler.pitch_bend(pitch_bend, channel)
+        time.sleep(0.005)
         self.midi_handler.note_on(midi_note, MidiConfig.DEFAULT_VELOCITY, channel)
         self.active_notes[(event.coord, event.octave)] = channel
 

@@ -36,7 +36,7 @@ class MidiHandler:
         """
         # The type hint uses the aliased name inside a string literal.
         # This is unambiguous and works for both runtime and type checking.
-        self.synth: fluidsynth_for_typing.Synth | None = None
+        self.synth: "fluidsynth_for_typing.Synth | None" = None
         self.sfid: int | None = None
         self.is_active = False
 
@@ -66,12 +66,42 @@ class MidiHandler:
             self.synth = synth
             self.sfid = sfid
             self.is_active = True
+            self._set_pitch_bend_range()
             print(f"FluidSynth initialized with SoundFont: {soundfont_path}") 
 
         except Exception as e:
             print(f"Failed to initialize FluidSynth: {e}", file=sys.stderr)
             # self.synth remains None and self.is_active remains False.
 
+    def _set_pitch_bend_range(self, semitones: int = 2):
+        """
+        Sets the pitch bend range for all channels using RPN messages.
+        This is crucial for ensuring the synthesizer interprets pitch bend
+        values correctly.
+
+        Args:
+            semitones: The desired pitch bend range in semitones (+/-).
+        """
+        if not self.is_active or not self.synth:
+            return
+            
+        # RPN messages are sent via cc (control change) messages.
+        # RPN for Pitch Bend Sensitivity is (0, 0).
+        for channel in range(16):
+            # Select the Pitch Bend Sensitivity RPN
+            self.synth.cc(channel, 101, 0)  # RPN MSB
+            self.synth.cc(channel, 100, 0)  # RPN LSB
+            
+            # Set the new value (semitones)
+            self.synth.cc(channel, 6, semitones) # Data Entry MSB
+            
+            # Optional: for finer control (cents)
+            self.synth.cc(channel, 38, 0) # Data Entry LSB
+            
+            # Deselect the RPN so subsequent cc messages are not misinterpreted
+            self.synth.cc(channel, 101, 127)
+            self.synth.cc(channel, 100, 127)
+            
     def get_instruments(self, bank: int = 0) -> dict[str, int]:
         """
         Retrieves instruments by iterating through possible preset numbers

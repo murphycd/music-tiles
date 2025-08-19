@@ -6,9 +6,6 @@ from typing import Tuple
 from config import MusicConfig
 import utils
 from tuning import JUST_INTONATION
-#from tuning import EQUAL_TEMPERAMENT
-#from tuning import MEANTONE_TUNING
-#from tuning import PYTHAGOREAN_TUNING
 
 
 class NoteMapper:

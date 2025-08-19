@@ -24,7 +24,7 @@ from midi_handler import MidiHandler
 from note_mapper import NoteMapper
 from midi_controller import MidiController
 import utils
-
+import tuning
 
 class App:
     """The main application controller."""
@@ -32,16 +32,23 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Musical Tile Grid")
-        self.root.geometry("1100x700")
+        self.root.geometry("1600x700")
 
         self.octave_label: Optional[tk.Label] = None
         self.enharmonic_button_text: Optional[tk.StringVar] = None
         self.instrument_var: Optional[tk.StringVar] = None
         self.instrument_list: Dict[str, int] = {}
 
+        self.tuning_systems = {
+            "12-TET": tuning.EQUAL_TEMPERAMENT,
+            "Just Intonation": tuning.JUST_INTONATION,
+            "Pythagorean": tuning.PYTHAGOREAN_TUNING,
+            "Meantone": tuning.MEANTONE_TUNING,
+        }
+
         # --- Component Initialization ---
         self.model = TonnetzModel()
-        self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH, audio_driver='dsound')
+        self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH, audio_driver= None)
         self.note_mapper = NoteMapper()
         self.midi_controller = MidiController(self.midi_handler, self.note_mapper)
         self.model.add_listener(self.midi_controller)
@@ -113,6 +120,24 @@ class App:
         right_frame = tk.Frame(top_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
         right_frame.pack(side=tk.RIGHT, padx=10, pady=5)
 
+        tuning_frame = tk.Frame(right_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
+        tuning_frame.pack(side=tk.LEFT, padx=10) # Changed to LEFT to order it nicely
+        tk.Label(
+            tuning_frame, text="Tuning:", bg=StyleConfig.COLOR_UI_BACKGROUND
+        ).pack(side=tk.TOP)
+
+        self.tuning_listbox = tk.Listbox(tuning_frame, height=len(self.tuning_systems), exportselection=False, width=15)
+        for name in self.tuning_systems:
+            self.tuning_listbox.insert(tk.END, name)
+
+        # Set the initial selection to match the default in note_mapper
+        default_tuning_name = "Just Intonation"
+        if default_tuning_name in self.tuning_systems:
+            default_index = list(self.tuning_systems.keys()).index(default_tuning_name)
+            self.tuning_listbox.select_set(default_index)
+
+        self.tuning_listbox.pack(side=tk.BOTTOM)
+        self.tuning_listbox.bind("<<ListboxSelect>>", self._on_tuning_change)
         self.octave_label = tk.Label(
             right_frame, text="", width=15, bg=StyleConfig.COLOR_UI_BACKGROUND
         )
@@ -175,6 +200,19 @@ class App:
 
         self.canvas = tk.Canvas(self.root, bg="white", highlightthickness=0)
         self.canvas.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
+
+    def _on_tuning_change(self, event: tk.Event):
+        """Handles changing the active tuning system from the listbox."""
+        selected_indices = self.tuning_listbox.curselection()
+        if not selected_indices:
+            return
+
+        selected_name = self.tuning_listbox.get(selected_indices[0])
+        new_tuning = self.tuning_systems.get(selected_name)
+
+        if new_tuning and self.note_mapper:
+            self.note_mapper.set_tuning_system(new_tuning)
+            print(f"Tuning system changed to: {selected_name}")
 
     def _on_instrument_var_change(self, *args):
         """Callback for when the instrument StringVar changes."""

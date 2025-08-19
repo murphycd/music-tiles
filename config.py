@@ -92,4 +92,4 @@ class MidiConfig:
 
     DEFAULT_VELOCITY: int = 127
     SOUNDFONT_PATH: str = "soundfonts/MuseScore_General.sf3"
-    DEFAULT_INSTRUMENT: int = 85
+    DEFAULT_INSTRUMENT: int = 73
