@@ -5,7 +5,7 @@ high-level object-oriented API.
 """
 import sys
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 # This block is only processed by type checkers.
 # We import 'fluidsynth' with an alias to create a name that will not
@@ -26,9 +26,13 @@ except ImportError:
 class MidiHandler:
     """A wrapper for the pyfluidsynth.Synth object."""
 
-    def __init__(self, soundfont_path: str):
+    def __init__(self, soundfont_path: str, audio_driver: Optional[str] = None):
         """
         Initializes the FluidSynth synthesizer using the high-level Synth API.
+
+         Args:
+            soundfont_path: Path to the .sf2 or .sf3 SoundFont file.
+            audio_driver: The audio driver for FluidSynth to use (e.g., 'dsound')
         """
         # The type hint uses the aliased name inside a string literal.
         # This is unambiguous and works for both runtime and type checking.
@@ -48,12 +52,12 @@ class MidiHandler:
             return
 
         try:
-            # Use local variables for initialization; only assign to self on success.
+            
             # 1. Create the Synth object.
             synth = fluidsynth.Synth()
 
             # 2. Start the audio driver.
-            synth.start()
+            synth.start(driver=audio_driver)
 
             # 3. Load the SoundFont.
             sfid = synth.sfload(soundfont_path)
@@ -62,7 +66,7 @@ class MidiHandler:
             self.synth = synth
             self.sfid = sfid
             self.is_active = True
-            print(f"FluidSynth initialized with SoundFont: {soundfont_path}")
+            print(f"FluidSynth initialized with SoundFont: {soundfont_path}") 
 
         except Exception as e:
             print(f"Failed to initialize FluidSynth: {e}", file=sys.stderr)
@@ -94,12 +98,13 @@ class MidiHandler:
 
         return instruments
 
-    def program_select(self, program_num: int, channel: int = 0):
-        """Changes the instrument for a given channel."""
+    def program_select(self, program_num: int):
+        """Changes the instrument for all 16 channels."""
         if self.is_active and self.synth and self.sfid is not None:
-            self.synth.program_select(channel, self.sfid, 0, program_num)
+            for channel in range(16):
+                self.synth.program_select(channel, self.sfid, 0, program_num)
 
-    def note_on(self, pitch: int, velocity: int = 100, channel: int = 0):
+    def note_on(self, pitch: int, velocity: int = 127, channel: int = 0):
         """Sends a Note On message."""
         if self.is_active and self.synth and 0 <= pitch <= 127:
             self.synth.noteon(channel, pitch, velocity)
@@ -108,7 +113,12 @@ class MidiHandler:
         """Sends a Note Off message."""
         if self.is_active and self.synth and 0 <= pitch <= 127:
             self.synth.noteoff(channel, pitch)
-
+    
+    def pitch_bend(self, value: int, channel: int = 0):
+        """sends a pitch bend message"""
+        if self.is_active and self.synth:
+            self.synth.pitch_bend(channel, value)
+    
     def close(self):
         """
         Closes the synthesizer and cleans up resources by calling the
@@ -119,3 +129,5 @@ class MidiHandler:
             self.synth = None
             self.is_active = False
             print("FluidSynth terminated.")
+    
+    

@@ -5,7 +5,6 @@ Contains all configuration constants and enumerations for the application.
 from dataclasses import dataclass
 from enum import Enum, auto
 
-
 class DragMode(Enum):
     """Defines the possible modes for a mouse drag action."""
 
@@ -32,7 +31,7 @@ class StyleConfig:
     COLOR_TEXT_SELECTED: str = "#ffffff"
     COLOR_UI_BACKGROUND: str = "#e0e0e0"
     COLOR_DRAG_LINE: str = "red"
-    FONT_FAMILY: str = "Arial"
+    FONT_FAMILY: str = "Century"
 
 
 @dataclass
@@ -40,8 +39,8 @@ class ViewConfig:
     """Defines the configuration for the viewport and zoom behavior."""
 
     MIN_TILES_ON_SCREEN: int = 3
-    MAX_TILES_ON_SCREEN: int = 18
-    INITIAL_TILES_ON_SCREEN: int = 5
+    MAX_TILES_ON_SCREEN: int = 21
+    INITIAL_TILES_ON_SCREEN: int = 7
     NOTE_VISIBILITY_ZOOM_THRESHOLD: float = 25.0
     DEFAULT_RENDER_MODE: RenderMode = RenderMode.RECTANGLE
 
@@ -67,7 +66,7 @@ class MusicConfig:
     """
 
     ORIGIN_NOTE: str = "C4"
-    DEFAULT_USE_SHARPS: bool = True
+    DEFAULT_USE_SHARPS: bool = False
 
     # The pitch change for moving one step along the 'q' axis.
     # Corresponds to the interval of a Major Third.
@@ -91,6 +90,6 @@ class OctaveConfig:
 class MidiConfig:
     """Defines constants for MIDI output."""
 
-    DEFAULT_VELOCITY: int = 100
+    DEFAULT_VELOCITY: int = 127
     SOUNDFONT_PATH: str = "soundfonts/MuseScore_General.sf3"
     DEFAULT_INSTRUMENT: int = 85

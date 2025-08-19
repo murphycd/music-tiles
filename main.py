@@ -41,7 +41,7 @@ class App:
 
         # --- Component Initialization ---
         self.model = TonnetzModel()
-        self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH)
+        self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH, audio_driver='dsound')
         self.note_mapper = NoteMapper()
         self.midi_controller = MidiController(self.midi_handler, self.note_mapper)
         self.model.add_listener(self.midi_controller)
