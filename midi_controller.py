@@ -91,6 +91,6 @@ class MidiController:
     def _on_selection_cleared(self, event: SelectionClearedEvent):
         """Handles clearing the grid by stopping all previously playing notes."""
         for (coord, octave), channel in self.active_notes.items():
-            midi_note = self.note_mapper.coord_to_midi(coord, octave)
+            midi_note, _ = self.note_mapper.coord_to_midi(coord, octave)
             self.midi_handler.note_off(midi_note, channel)
         self.active_notes.clear()

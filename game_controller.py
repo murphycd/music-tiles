@@ -3,16 +3,19 @@
 Manages the Game of Life simulation - handels the timing and
 updating the tonnetz model.
 """
-import tkinter as tk
-from typing import Optional
+import tkinter as tk 
+from typing import Optional, TYPE_CHECKING
 
 from tonnetz import TonnetzModel
 from game_of_life import GameOfLifeLogic
 
+if TYPE_CHECKING:
+    from __main__ import App
+
 class GameOfLifeController:
     """Handeling of the Game of Life simulation."""
 
-    def __init__(self, model: TonnetzModel, root: tk.Tk):
+    def __init__(self, model: TonnetzModel, app: 'App'):
         """
         Initializes the controller
 
@@ -21,7 +24,8 @@ class GameOfLifeController:
             root: The Tkinter root window, used for scheduling updates.
         """
         self.model = model
-        self.root = root
+        self.app = app
+        self.root = app.root 
         self.is_running = False
         self.tick_interval_ms = 2000  # Default interval: 2000ms (4 beats @ 120 BPM)
         self._job_id: Optional[str] = None
@@ -61,6 +65,7 @@ class GameOfLifeController:
         self._calculate_and_apply_next_generation()
 
         # Schedule the next tick
+        self._calculate_and_apply_next_generation()
         self._job_id = self.root.after(self.tick_interval_ms, self._tick)
 
     def _calculate_and_apply_next_generation(self):
@@ -70,7 +75,7 @@ class GameOfLifeController:
 
         # Preserve the octaves of the cells that survive TODO: maybe don't do this? the longer a note survives the higher it gets?
         next_selection = {
-            coord: self.model.selected_tiles.get(coord, self.model.global_octave)
+            coord: self.model.selected_tiles.get(coord, self.app.global_octave)
             for coord in next_gen_cells
         }
 

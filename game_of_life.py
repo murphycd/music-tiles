@@ -46,12 +46,12 @@ class GameOfLifeLogic:
 
         next_gen_cells = set()
 
-        # Rule 1 & 2: Survival and Death
+        # Survival and underpopulation/overpopulation
         for cell in live_cells:
             if neighbor_counts[cell] in {2, 3}:
                 next_gen_cells.add(cell)
 
-        # Rule 3: Birth
+        # Repopulation
         for cell, count in neighbor_counts.items():
             if count == 3 and cell not in live_cells:
                 next_gen_cells.add(cell)

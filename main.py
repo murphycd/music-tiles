@@ -51,18 +51,16 @@ class App:
         # --- Component Initialization ---
         self.model = TonnetzModel()
         self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH, audio_driver= None)
-        self.note_mapper = NoteMapper()
-        self.midi_controller = MidiController(self.midi_handler, self.note_mapper)
-        self.model.add_listener(self.midi_controller)
 
         if self.midi_handler.is_active:
-            """default_tuning = self.tuning_systems.get("Just Intonation")
-            if default_tuning:
-                self.midi_handler.apply_tuning(default_tuning)"""
             self.instrument_list = self.midi_handler.get_instruments()
             self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
 
-        self.game_controller = GameOfLifeController(self.model, self.root)
+        self.note_mapper = NoteMapper()
+        self.midi_controller = MidiController(self.midi_handler, self.note_mapper)
+        self.model.add_listener(self.midi_controller)
+        self.game_controller = GameOfLifeController(self.model, self)
+
         self._setup_ui()
         self.viewport: Optional[Viewport] = None
         self.renderer: Optional[GridRenderer] = None
@@ -179,16 +177,16 @@ class App:
 
         self.speed_slider = tk.Scale(
             speed_frame,
-            from_=1000,
-            to=50,
+            from_=50,
+            to=5000,
             orient=tk.HORIZONTAL,
             command=self._on_speed_change,
-            showvalue=0, # Hide the numeric value
+            showvalue=1, # Show/Hide the numeric value
             bg=StyleConfig.COLOR_UI_BACKGROUND,
             troughcolor="#cccccc",
             highlightthickness=0
         )
-        self.speed_slider.set(500) # Corresponds to the default 500ms
+        self.speed_slider.set(2000) # Corresponds to the default
         self.speed_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         tk.Button(
