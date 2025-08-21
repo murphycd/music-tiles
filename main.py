@@ -23,6 +23,8 @@ from renderer import GridRenderer
 from midi_handler import MidiHandler
 from note_mapper import NoteMapper
 from midi_controller import MidiController
+from game_controller import GameOfLifeController
+
 import utils
 import tuning
 
@@ -60,6 +62,7 @@ class App:
             self.instrument_list = self.midi_handler.get_instruments()
             self.midi_handler.program_select(MidiConfig.DEFAULT_INSTRUMENT)
 
+        self.game_controller = GameOfLifeController(self.model, self.root)
         self._setup_ui()
         self.viewport: Optional[Viewport] = None
         self.renderer: Optional[GridRenderer] = None
@@ -153,6 +156,40 @@ class App:
             command=self._toggle_enharmonics,
         ).pack(side=tk.RIGHT, padx=5)
         self._update_enharmonic_button_text()
+
+        game_frame = tk.Frame(right_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
+        game_frame.pack(side=tk.RIGHT, padx=10)
+
+        tk.Label(
+            game_frame, text="Game of Life:", bg=StyleConfig.COLOR_UI_BACKGROUND
+        ).pack(side=tk.TOP)
+
+        control_frame = tk.Frame(game_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
+        control_frame.pack(side=tk.TOP)
+
+        tk.Button(control_frame, text="Start", command=self.game_controller.start).pack(side=tk.LEFT, padx=2)
+        tk.Button(control_frame, text="Stop", command=self.game_controller.stop).pack(side=tk.LEFT, padx=2)
+        tk.Button(control_frame, text="Step", command=self.game_controller.step).pack(side=tk.LEFT, padx=2)
+
+        # Speed slider
+        speed_frame = tk.Frame(game_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
+        speed_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
+        
+        tk.Label(speed_frame, text="Speed:", bg=StyleConfig.COLOR_UI_BACKGROUND).pack(side=tk.LEFT)
+
+        self.speed_slider = tk.Scale(
+            speed_frame,
+            from_=1000,
+            to=50,
+            orient=tk.HORIZONTAL,
+            command=self._on_speed_change,
+            showvalue=0, # Hide the numeric value
+            bg=StyleConfig.COLOR_UI_BACKGROUND,
+            troughcolor="#cccccc",
+            highlightthickness=0
+        )
+        self.speed_slider.set(500) # Corresponds to the default 500ms
+        self.speed_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         tk.Button(
             right_frame, text="Toggle Layout", command=self._toggle_render_mode
@@ -391,6 +428,12 @@ class App:
 
         if self.viewport.zoom_at(scale, event.x, event.y):
             self.renderer.redraw_full()
+
+    def _on_speed_change(self, value_str: str):
+        """Callback for when the speed slider changes."""
+        interval_ms = int(value_str)
+        if self.game_controller:
+            self.game_controller.set_tick_interval(interval_ms)
 
 
 if __name__ == "__main__":

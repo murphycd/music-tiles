@@ -110,3 +110,28 @@ class TonnetzModel:
 
         self.pitch_class_cache[coord] = pitch_class
         return pitch_class
+
+    def set_selection(self, new_selection: Dict[Tuple[int, int], int]):
+        """
+        Efficiently updates the selection to a new state, firing events only
+        for the tiles that changed.
+
+        Args:
+            new_selection: A dictionary of {coord: octave} for the new state.
+        """
+        current_coords = set(self.selected_tiles.keys())
+        new_coords = set(new_selection.keys())
+
+        coords_to_deselect = current_coords - new_coords
+        coords_to_select = new_coords - current_coords
+
+        # Fire deselection events first
+        for coord in coords_to_deselect:
+            octave = self.selected_tiles.pop(coord)
+            self._notify(TileDeselectedEvent(coord=coord, octave=octave))
+
+        # Fire selection events
+        for coord in coords_to_select:
+            octave = new_selection[coord]
+            self.selected_tiles[coord] = octave
+            self._notify(TileSelectedEvent(coord=coord, octave=octave))

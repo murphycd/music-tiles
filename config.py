@@ -91,5 +91,5 @@ class MidiConfig:
     """Defines constants for MIDI output."""
 
     DEFAULT_VELOCITY: int = 127
-    SOUNDFONT_PATH: str = "soundfonts/GeneralUser-GS.sf2"
+    SOUNDFONT_PATH: str = "soundfonts/MuseScore_General.sf3"
     DEFAULT_INSTRUMENT: int = 78
