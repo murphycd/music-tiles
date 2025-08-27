@@ -14,7 +14,6 @@ from events import (
     ModelEvent,
     TileSelectedEvent,
     TileDeselectedEvent,
-    TileOctaveChangedEvent,
     SelectionClearedEvent,
 )
 
@@ -43,9 +42,7 @@ class GridRenderer:
 
     def handle_event(self, event: ModelEvent):
         """Handles model events to update visuals."""
-        if isinstance(
-            event, (TileSelectedEvent, TileDeselectedEvent, TileOctaveChangedEvent)
-        ):
+        if isinstance(event, (TileSelectedEvent, TileDeselectedEvent)):
             self._update_tile_style(event.coord)
         elif isinstance(event, SelectionClearedEvent):
             # A full clear can be handled efficiently by redrawing.

@@ -3,7 +3,7 @@
 Contains pure, standalone utility functions for geometry and music theory.
 """
 from typing import Generator, Tuple
-from config import MusicConfig
+from config import MusicConfig, OctaveConfig
 
 # Tuples contain enharmonic equivalents. The first is preferred for sharps, the second for flats.
 _PITCH_CLASS_NAMES = (
@@ -20,6 +20,25 @@ _PITCH_CLASS_NAMES = (
     ("A#", "Bb"),
     ("B",),
 )
+
+
+def get_wrapped_midi_and_octave(midi: int) -> Tuple[int, int]:
+    """Wraps a MIDI note's octave within the configured MIN/MAX_OCTAVE."""
+    pitch_class = midi % 12
+    octave = midi // 12 - 1
+
+    min_o = OctaveConfig.MIN_OCTAVE
+    max_o = OctaveConfig.MAX_OCTAVE
+
+    # If bounds are invalid, return original values
+    if min_o > max_o:
+        return midi, octave
+
+    span = max_o - min_o + 1
+    wrapped_octave = (octave - min_o) % span + min_o
+    final_midi = 12 * (wrapped_octave + 1) + pitch_class
+
+    return final_midi, wrapped_octave
 
 
 def bresenham_line(
