@@ -3,9 +3,8 @@
 Handles the mapping from grid coordinates to musical notes (e.g., MIDI).
 """
 from typing import Tuple
-from config import MusicConfig
+from config import MusicConfig, TuningConfig
 import utils
-from tuning import JUST_INTONATION
 
 
 class NoteMapper:
@@ -15,9 +14,11 @@ class NoteMapper:
 
     def __init__(self):
         self.base_midi = utils.note_to_midi(MusicConfig.ORIGIN_NOTE)
-        self.tuning_system = JUST_INTONATION
+        self.tuning_system = TuningConfig.get_tuning_systems()[
+            TuningConfig.DEFAULT_SELECTION_INDEX
+        ]
 
-    def set_tuning_system(self, tuning: dict):
+    def set_tuning_system(self, tuning: TuningConfig.TuningSystem):
         self.tuning_system = tuning
 
     def _cents_to_pitch_bend(self, cents: float) -> int:
@@ -30,16 +31,18 @@ class NoteMapper:
         # Add to the center value and ensure it's an integer
         return int(8192 + bend)
 
-    def coord_to_midi(self, coord: Tuple[int, int], octave: int) -> Tuple[int, int]:
+    def coord_to_midi(self, coord: Tuple[int, int]) -> Tuple[int, int]:
         """
-        Calculates the MIDI note and pitch bend value for a coordinate.
+        Calculates the MIDI note and pitch bend for a coordinate.
+        The octave is determined by the note's position on the grid and
+        wrapped within the configured octave bounds.
         """
-        base_pitch_midi = utils.coord_to_midi(coord, self.base_midi)
-        pitch_class = base_pitch_midi % 12
-        midi_note = 12 * (octave + 1) + pitch_class
+        absolute_midi = utils.coord_to_midi(coord, self.base_midi)
+        final_midi, _octave = utils.get_wrapped_midi_and_octave(absolute_midi)
 
-        # Get the cents deviation from the current tuning system
-        cents_deviation = self.tuning_system.get(pitch_class, 0)
+        # Pitch bend is based on the pitch class of the *unwrapped* note
+        pitch_class_for_tuning = absolute_midi % 12
+        cents_deviation = self.tuning_system.definition.get(pitch_class_for_tuning, 0)
         pitch_bend_value = self._cents_to_pitch_bend(cents_deviation)
 
-        return midi_note, pitch_bend_value
+        return final_midi, pitch_bend_value

@@ -14,8 +14,8 @@ from config import (
     StyleConfig,
     ViewConfig,
     InteractionConfig,
-    OctaveConfig,
     MidiConfig,
+    TuningConfig,
 )
 from viewport import Viewport
 from tonnetz import TonnetzModel
@@ -26,7 +26,7 @@ from midi_controller import MidiController
 from game_controller import GameOfLifeController
 
 import utils
-import tuning
+
 
 class App:
     """The main application controller."""
@@ -36,21 +36,13 @@ class App:
         self.root.title("Musical Tile Grid")
         self.root.geometry("1600x700")
 
-        self.octave_label: Optional[tk.Label] = None
         self.enharmonic_button_text: Optional[tk.StringVar] = None
         self.instrument_var: Optional[tk.StringVar] = None
         self.instrument_list: Dict[str, int] = {}
 
-        self.tuning_systems = {
-            "12-TET": tuning.EQUAL_TEMPERAMENT,
-            "Just Intonation": tuning.JUST_INTONATION,
-            "Pythagorean": tuning.PYTHAGOREAN_TUNING,
-            "Meantone": tuning.MEANTONE_TUNING,
-        }
-
         # --- Component Initialization ---
         self.model = TonnetzModel()
-        self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH, audio_driver= None)
+        self.midi_handler = MidiHandler(MidiConfig.SOUNDFONT_PATH, audio_driver=None)
 
         if self.midi_handler.is_active:
             self.instrument_list = self.midi_handler.get_instruments()
@@ -72,8 +64,6 @@ class App:
         self.drag_last_coord: Optional[Tuple[int, int]] = None
         self.drag_affected_coords: Set[Tuple[int, int]] = set()
         self.drag_button: int = 0
-        self.global_octave = OctaveConfig.INITIAL_OCTAVE
-        self._update_octave_label()
 
         self._bind_events()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -114,8 +104,7 @@ class App:
         top_frame.pack(side=tk.TOP, fill=tk.X)
 
         instructions = (
-            "Left-Click/Drag: Toggle Select | Right-Click: Change Octave | "
-            "Middle-Click Drag: Pan | Scroll: Zoom"
+            "Left-Click/Drag: Toggle Select | " "Middle-Click Drag: Pan | Scroll: Zoom"
         )
         tk.Label(
             top_frame, text=instructions, anchor="w", bg=StyleConfig.COLOR_UI_BACKGROUND
@@ -125,27 +114,23 @@ class App:
         right_frame.pack(side=tk.RIGHT, padx=10, pady=5)
 
         tuning_frame = tk.Frame(right_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
-        tuning_frame.pack(side=tk.LEFT, padx=10) # Changed to LEFT to order it nicely
-        tk.Label(
-            tuning_frame, text="Tuning:", bg=StyleConfig.COLOR_UI_BACKGROUND
-        ).pack(side=tk.TOP)
+        tuning_frame.pack(side=tk.LEFT, padx=10)
+        tk.Label(tuning_frame, text="Tuning:", bg=StyleConfig.COLOR_UI_BACKGROUND).pack(
+            side=tk.TOP
+        )
 
-        self.tuning_listbox = tk.Listbox(tuning_frame, height=len(self.tuning_systems), exportselection=False, width=15)
-        for name in self.tuning_systems:
-            self.tuning_listbox.insert(tk.END, name)
-
-        # Set the initial selection to match the default in note_mapper
-        default_tuning_name = "Just Intonation"
-        if default_tuning_name in self.tuning_systems:
-            default_index = list(self.tuning_systems.keys()).index(default_tuning_name)
-            self.tuning_listbox.select_set(default_index)
-
+        tuning_systems_list = TuningConfig.get_tuning_systems()
+        self.tuning_listbox = tk.Listbox(
+            tuning_frame,
+            height=len(tuning_systems_list),
+            exportselection=False,
+            width=15,
+        )
+        for system in tuning_systems_list:
+            self.tuning_listbox.insert(tk.END, system.displayText)
+        self.tuning_listbox.select_set(TuningConfig.DEFAULT_SELECTION_INDEX)
         self.tuning_listbox.pack(side=tk.BOTTOM)
         self.tuning_listbox.bind("<<ListboxSelect>>", self._on_tuning_change)
-        self.octave_label = tk.Label(
-            right_frame, text="", width=15, bg=StyleConfig.COLOR_UI_BACKGROUND
-        )
-        self.octave_label.pack(side=tk.RIGHT)
 
         self.enharmonic_button_text = tk.StringVar()
         tk.Button(
@@ -165,15 +150,23 @@ class App:
         control_frame = tk.Frame(game_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
         control_frame.pack(side=tk.TOP)
 
-        tk.Button(control_frame, text="Start", command=self.game_controller.start).pack(side=tk.LEFT, padx=2)
-        tk.Button(control_frame, text="Stop", command=self.game_controller.stop).pack(side=tk.LEFT, padx=2)
-        tk.Button(control_frame, text="Step", command=self.game_controller.step).pack(side=tk.LEFT, padx=2)
+        tk.Button(control_frame, text="Start", command=self.game_controller.start).pack(
+            side=tk.LEFT, padx=2
+        )
+        tk.Button(control_frame, text="Stop", command=self.game_controller.stop).pack(
+            side=tk.LEFT, padx=2
+        )
+        tk.Button(control_frame, text="Step", command=self.game_controller.step).pack(
+            side=tk.LEFT, padx=2
+        )
 
         # Speed slider
         speed_frame = tk.Frame(game_frame, bg=StyleConfig.COLOR_UI_BACKGROUND)
         speed_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
-        
-        tk.Label(speed_frame, text="Speed:", bg=StyleConfig.COLOR_UI_BACKGROUND).pack(side=tk.LEFT)
+
+        tk.Label(speed_frame, text="Speed:", bg=StyleConfig.COLOR_UI_BACKGROUND).pack(
+            side=tk.LEFT
+        )
 
         self.speed_slider = tk.Scale(
             speed_frame,
@@ -181,12 +174,12 @@ class App:
             to=5000,
             orient=tk.HORIZONTAL,
             command=self._on_speed_change,
-            showvalue=1, # Show/Hide the numeric value
+            showvalue=True,  # Show/Hide the numeric value
             bg=StyleConfig.COLOR_UI_BACKGROUND,
             troughcolor="#cccccc",
-            highlightthickness=0
+            highlightthickness=0,
         )
-        self.speed_slider.set(2000) # Corresponds to the default
+        self.speed_slider.set(2000)  # Corresponds to the default
         self.speed_slider.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         tk.Button(
@@ -245,12 +238,13 @@ class App:
         if not selected_indices:
             return
 
-        selected_name = self.tuning_listbox.get(selected_indices[0])
-        new_tuning = self.tuning_systems.get(selected_name)
+        new_tuning: TuningConfig.TuningSystem = TuningConfig.get_tuning_systems()[
+            selected_indices[0]
+        ]
 
         if new_tuning and self.note_mapper:
             self.note_mapper.set_tuning_system(new_tuning)
-            print(f"Tuning system changed to: {selected_name}")
+            print(f"Tuning system changed to: {new_tuning.displayText}")
 
     def _on_instrument_var_change(self, *args):
         """Callback for when the instrument StringVar changes."""
@@ -265,11 +259,6 @@ class App:
             program_num = self.instrument_list.get(instrument_name)
             if program_num is not None:
                 self.midi_handler.program_select(program_num)
-
-    def _update_octave_label(self):
-        """Updates the global octave display in the UI."""
-        if self.octave_label:
-            self.octave_label.config(text=f"Global Octave: {self.global_octave}")
 
     def _update_enharmonic_button_text(self):
         """Updates the text on the sharps/flats toggle button."""
@@ -377,7 +366,7 @@ class App:
                 current_coord[1],
             ):
                 if coord not in self.drag_affected_coords:
-                    self.model.toggle_selection(coord, self.global_octave)
+                    self.model.toggle_selection(coord)
                     self.drag_affected_coords.add(coord)
             self.drag_last_coord = current_coord
 
@@ -393,20 +382,7 @@ class App:
 
         if self.drag_button == 1 and is_click:
             coord = self.viewport.canvas_to_world_int(event.x, event.y)
-            self.model.toggle_selection(coord, self.global_octave)
-
-        elif self.drag_button == 3 and is_click:
-            coord = self.viewport.canvas_to_world_int(event.x, event.y)
-            if self.model.is_selected(coord):
-                new_octave = self.model.increment_octave(coord)
-                if new_octave is not None:
-                    self.global_octave = new_octave
-                    self._update_octave_label()
-            else:
-                min_o, max_o = OctaveConfig.MIN_OCTAVE, OctaveConfig.MAX_OCTAVE
-                span = max_o - min_o + 1
-                self.global_octave = (self.global_octave - min_o + 1) % span + min_o
-                self._update_octave_label()
+            self.model.toggle_selection(coord)
 
         self.drag_mode = DragMode.NONE
         self.drag_last_coord = None

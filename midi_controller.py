@@ -3,6 +3,7 @@
 A subscriber that listens to model events and controls MIDI output.
 """
 import time
+from typing import Tuple
 from midi_handler import MidiHandler
 from note_mapper import NoteMapper
 from config import MidiConfig
@@ -10,7 +11,6 @@ from events import (
     ModelEvent,
     TileSelectedEvent,
     TileDeselectedEvent,
-    TileOctaveChangedEvent,
     SelectionClearedEvent,
 )
 
@@ -31,7 +31,7 @@ class MidiController:
         """
         self.midi_handler = midi_handler
         self.note_mapper = note_mapper
-        self.active_notes = {} # To store which note is on which channel
+        self.active_notes: dict[Tuple[int, int], int] = {}  # coord -> channel
         self.next_channel = 0
 
     def _get_next_channel(self):
@@ -46,51 +46,33 @@ class MidiController:
             self._on_tile_selected(event)
         elif isinstance(event, TileDeselectedEvent):
             self._on_tile_deselected(event)
-        elif isinstance(event, TileOctaveChangedEvent):
-            self._on_tile_octave_changed(event)
         elif isinstance(event, SelectionClearedEvent):
             self._on_selection_cleared(event)
 
     def _on_tile_selected(self, event: TileSelectedEvent):
         """Handles tile selection by sending a MIDI Note On message."""
-        midi_note, pitch_bend = self.note_mapper.coord_to_midi(event.coord, event.octave)
+        midi_note, pitch_bend = self.note_mapper.coord_to_midi(event.coord)
         print(f"Playing Note: {midi_note}, Pitch Bend: {pitch_bend}")
-        
+
         channel = self._get_next_channel()
         # Send pitch bend BEFORE note on
         self.midi_handler.pitch_bend(pitch_bend, channel)
         # Optional small delay to ensure messages are processed in order
         time.sleep(0.005)
         self.midi_handler.note_on(midi_note, MidiConfig.DEFAULT_VELOCITY, channel)
-        self.active_notes[(event.coord, event.octave)] = channel
+        self.active_notes[event.coord] = channel
 
     def _on_tile_deselected(self, event: TileDeselectedEvent):
         """Handles tile deselection by sending a MIDI Note Off message."""
-        if (event.coord, event.octave) in self.active_notes:
-            channel = self.active_notes.pop((event.coord, event.octave))
+        if event.coord in self.active_notes:
+            channel = self.active_notes.pop(event.coord)
             # We only need the note number to turn it off
-            midi_note, _ = self.note_mapper.coord_to_midi(event.coord, event.octave)
+            midi_note, _ = self.note_mapper.coord_to_midi(event.coord)
             self.midi_handler.note_off(midi_note, channel)
-
-    def _on_tile_octave_changed(self, event: TileOctaveChangedEvent):
-        """Handles octave changes by stopping the old note and starting the new one."""
-        # Turn off the old note
-        if (event.coord, event.old_octave) in self.active_notes:
-            channel = self.active_notes.pop((event.coord, event.old_octave))
-            old_midi, _ = self.note_mapper.coord_to_midi(event.coord, event.old_octave)
-            self.midi_handler.note_off(old_midi, channel)
-
-        # Turn on the new note
-        new_midi, new_pitch_bend = self.note_mapper.coord_to_midi(event.coord, event.new_octave)
-        new_channel = self._get_next_channel()
-        self.midi_handler.pitch_bend(new_pitch_bend, new_channel)
-        time.sleep(0.005)
-        self.midi_handler.note_on(new_midi, MidiConfig.DEFAULT_VELOCITY, new_channel)
-        self.active_notes[(event.coord, event.new_octave)] = new_channel
 
     def _on_selection_cleared(self, event: SelectionClearedEvent):
         """Handles clearing the grid by stopping all previously playing notes."""
-        for (coord, octave), channel in self.active_notes.items():
-            midi_note, _ = self.note_mapper.coord_to_midi(coord, octave)
+        for coord, channel in self.active_notes.items():
+            midi_note, _ = self.note_mapper.coord_to_midi(coord)
             self.midi_handler.note_off(midi_note, channel)
         self.active_notes.clear()

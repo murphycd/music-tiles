@@ -3,8 +3,7 @@
 Manages the Game of Life simulation - handels the timing and
 updating the tonnetz model.
 """
-import tkinter as tk 
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Set, Tuple
 
 from tonnetz import TonnetzModel
 from game_of_life import GameOfLifeLogic
@@ -12,10 +11,11 @@ from game_of_life import GameOfLifeLogic
 if TYPE_CHECKING:
     from __main__ import App
 
+
 class GameOfLifeController:
     """Handeling of the Game of Life simulation."""
 
-    def __init__(self, model: TonnetzModel, app: 'App'):
+    def __init__(self, model: TonnetzModel, app: "App"):
         """
         Initializes the controller
 
@@ -25,7 +25,7 @@ class GameOfLifeController:
         """
         self.model = model
         self.app = app
-        self.root = app.root 
+        self.root = app.root
         self.is_running = False
         self.tick_interval_ms = 2000  # Default interval: 2000ms (4 beats @ 120 BPM)
         self._job_id: Optional[str] = None
@@ -54,7 +54,7 @@ class GameOfLifeController:
 
     def set_tick_interval(self, interval_ms: int):
         """Sets the time between simulation ticks."""
-        self.tick_interval_ms = max(50, interval_ms) # Enforce a minimum delay
+        self.tick_interval_ms = max(50, interval_ms)  # Enforce a minimum delay
         print(f"Game of Life interval set to {self.tick_interval_ms}ms.")
 
     def _tick(self):
@@ -70,13 +70,7 @@ class GameOfLifeController:
 
     def _calculate_and_apply_next_generation(self):
         """Gets the current state, calculates the next, and updates the model."""
-        current_live_cells = set(self.model.selected_tiles.keys())
+        current_live_cells: Set[Tuple[int, int]] = self.model.selected_tiles
         next_gen_cells = GameOfLifeLogic.get_next_generation(current_live_cells)
 
-        # Preserve the octaves of the cells that survive TODO: maybe don't do this? the longer a note survives the higher it gets?
-        next_selection = {
-            coord: self.model.selected_tiles.get(coord, self.app.global_octave)
-            for coord in next_gen_cells
-        }
-
-        self.model.set_selection(next_selection)
+        self.model.set_selection(next_gen_cells)
